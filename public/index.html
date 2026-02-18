@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Autotask Ticket Analyzer</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>Autotask Ticket Analyzer</h1>
+    <p class="subtitle">Quick-hitter identification &amp; automation scripts</p>
+  </header>
+
+  <main>
+    <!-- Status Bar -->
+    <div id="status-bar" class="status-bar">
+      <span id="status-text">Loading...</span>
+    </div>
+
+    <!-- Controls -->
+    <section class="controls">
+      <button id="btn-fetch" class="btn btn-primary">Fetch Tickets from Autotask</button>
+      <button id="btn-demo" class="btn btn-secondary">Load Demo Tickets</button>
+      <button id="btn-scripts" class="btn btn-secondary">Browse All Scripts</button>
+      <div class="filter-group">
+        <label for="filter-category">Filter:</label>
+        <select id="filter-category">
+          <option value="all">All Categories</option>
+          <option value="quick">Quick Hitters Only</option>
+        </select>
+        <label for="sort-by">Sort:</label>
+        <select id="sort-by">
+          <option value="automation">Automation Score</option>
+          <option value="time">Est. Time</option>
+          <option value="confidence">Confidence</option>
+        </select>
+      </div>
+    </section>
+
+    <!-- Summary Dashboard -->
+    <section id="summary" class="summary hidden">
+      <div class="stat-card">
+        <div class="stat-number" id="stat-total">0</div>
+        <div class="stat-label">Total Tickets</div>
+      </div>
+      <div class="stat-card highlight">
+        <div class="stat-number" id="stat-quick">0</div>
+        <div class="stat-label">Quick Hitters</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number" id="stat-automatable">0</div>
+        <div class="stat-label">Automatable</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number" id="stat-time-saved">0</div>
+        <div class="stat-label">Est. Min Saved</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number" id="stat-avg-score">0</div>
+        <div class="stat-label">Avg Auto Score</div>
+      </div>
+    </section>
+
+    <!-- Category Breakdown -->
+    <section id="category-breakdown" class="category-breakdown hidden">
+      <h2>Category Breakdown</h2>
+      <div id="category-bars"></div>
+    </section>
+
+    <!-- Ticket List -->
+    <section id="ticket-list" class="ticket-list">
+      <h2>Analyzed Tickets</h2>
+      <div id="tickets"></div>
+    </section>
+
+    <!-- Script Browser Modal -->
+    <div id="script-modal" class="modal hidden">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2 id="modal-title">Script</h2>
+          <button id="modal-close" class="btn-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <pre><code id="modal-code"></code></pre>
+        </div>
+        <div class="modal-footer">
+          <button id="btn-copy-script" class="btn btn-primary">Copy to Clipboard</button>
+          <button id="btn-download-script" class="btn btn-secondary">Download .ps1</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Script Library Modal -->
+    <div id="library-modal" class="modal hidden">
+      <div class="modal-content modal-wide">
+        <div class="modal-header">
+          <h2>Script Library</h2>
+          <button id="library-close" class="btn-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div id="library-content"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
