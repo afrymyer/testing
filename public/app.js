@@ -1,5 +1,6 @@
 // ── State ──
 let allTickets = [];
+let currentAnalytics = null;
 let currentScript = null;
 
 // ── DOM Elements ──
@@ -10,25 +11,61 @@ const ticketsContainer = $('#tickets');
 
 // ── Demo Tickets (for testing without Autotask credentials) ──
 const DEMO_TICKETS = [
-  { id: 1001, ticketNumber: 'T20240101.0001', title: 'User locked out - cannot login to computer', description: 'John Smith is locked out of his account. Tried password multiple times. Needs password reset and account unlock.' },
-  { id: 1002, ticketNumber: 'T20240101.0002', title: 'Printer not working in accounting dept', description: 'HP printer on 3rd floor is not printing. Jobs stuck in queue. Print spooler may need restart.' },
-  { id: 1003, ticketNumber: 'T20240101.0003', title: 'C: drive full on DESKTOP-HR01', description: 'User reports low disk space warning. C drive shows 2GB free out of 256GB. Need to clean temp files and old Windows updates.' },
-  { id: 1004, ticketNumber: 'T20240101.0004', title: 'Cannot connect to VPN from home', description: 'Remote user unable to connect to VPN. Getting timeout error. DNS may need flushing.' },
-  { id: 1005, ticketNumber: 'T20240101.0005', title: 'Outlook keeps crashing when opening', description: 'User reports Outlook crashes immediately on launch. Tried restarting computer. May need cache cleared or Office repair.' },
-  { id: 1006, ticketNumber: 'T20240101.0006', title: 'Teams showing blank screen', description: 'Microsoft Teams opens but shows white screen. No messages or channels visible. Cache issue suspected.' },
-  { id: 1007, ticketNumber: 'T20240101.0007', title: 'New hire starting Monday - need account setup', description: 'New employee Jane Doe starting in Marketing dept. Need AD account, email, Teams, and shared drive access.' },
-  { id: 1008, ticketNumber: 'T20240101.0008', title: 'Map network drive for finance team', description: 'Need to map \\\\fileserver\\finance$ as F: drive for 5 users in the finance department.' },
-  { id: 1009, ticketNumber: 'T20240101.0009', title: 'Employee departure - disable account', description: 'Bob Johnson last day was Friday. Need to disable AD account, remove groups, convert mailbox to shared, forward email to manager.' },
-  { id: 1010, ticketNumber: 'T20240101.0010', title: 'Computer running very slow', description: 'User says computer takes 10 minutes to boot and applications hang. Machine has not been rebooted in 45 days.' },
-  { id: 1011, ticketNumber: 'T20240101.0011', title: 'Set out of office for CEO vacation', description: 'CEO on vacation next week. Need out of office auto-reply set up for internal and external emails. Start Monday, end Friday.' },
-  { id: 1012, ticketNumber: 'T20240101.0012', title: 'SMART warning on workstation SSD', description: 'Datto RMM alert: SMART failure predicted on DESKTOP-SALES03 primary drive. Need to verify disk health.' },
-  { id: 1013, ticketNumber: 'T20240101.0013', title: 'Install printer on new workstation', description: 'New HP LaserJet at IP 192.168.1.50 needs to be added to DESKTOP-ACCT02.' },
-  { id: 1014, ticketNumber: 'T20240101.0014', title: 'Group policy not applying after OU move', description: 'Moved 3 workstations to new OU but GPO for drive mappings not applying. Need gpupdate force.' },
-  { id: 1015, ticketNumber: 'T20240101.0015', title: 'Excel crashes when opening large files', description: 'User reports Excel 365 crashes with files over 50MB. Other Office apps seem fine. May need Office repair.' },
-  { id: 1016, ticketNumber: 'T20240101.0016', title: 'Windows service stopped - backup agent', description: 'Backup agent service (Veeam Agent) stopped on SERVER02. Need service restarted.' },
-  { id: 1017, ticketNumber: 'T20240101.0017', title: 'Need mailbox permissions report for audit', description: 'Annual audit requires report of all shared mailbox permissions. Need Full Access, Send As, and Send on Behalf exported.' },
-  { id: 1018, ticketNumber: 'T20240101.0018', title: 'MFA reset for remote user', description: 'User got a new phone and needs MFA re-enrolled. Reset authenticator app registration.' },
+  { id: 1001, ticketNumber: 'T20240101.0001', title: 'User locked out - cannot login to computer', description: 'John Smith is locked out of his account. Tried password multiple times. Needs password reset and account unlock.', priority: 1, createDate: '2024-01-15T08:30:00Z' },
+  { id: 1002, ticketNumber: 'T20240101.0002', title: 'Printer not working in accounting dept', description: 'HP printer on 3rd floor is not printing. Jobs stuck in queue. Print spooler may need restart.', priority: 2, createDate: '2024-01-15T09:15:00Z' },
+  { id: 1003, ticketNumber: 'T20240101.0003', title: 'C: drive full on DESKTOP-HR01', description: 'User reports low disk space warning. C drive shows 2GB free out of 256GB. Need to clean temp files and old Windows updates.', priority: 3, createDate: '2024-01-16T10:00:00Z' },
+  { id: 1004, ticketNumber: 'T20240101.0004', title: 'Cannot connect to VPN from home', description: 'Remote user unable to connect to VPN. Getting timeout error. DNS may need flushing.', priority: 2, createDate: '2024-01-16T14:20:00Z' },
+  { id: 1005, ticketNumber: 'T20240101.0005', title: 'Outlook keeps crashing when opening', description: 'User reports Outlook crashes immediately on launch. Tried restarting computer. May need cache cleared or Office repair.', priority: 2, createDate: '2024-01-17T08:45:00Z' },
+  { id: 1006, ticketNumber: 'T20240101.0006', title: 'Teams showing blank screen', description: 'Microsoft Teams opens but shows white screen. No messages or channels visible. Cache issue suspected.', priority: 3, createDate: '2024-01-17T11:30:00Z' },
+  { id: 1007, ticketNumber: 'T20240101.0007', title: 'New hire starting Monday - need account setup', description: 'New employee Jane Doe starting in Marketing dept. Need AD account, email, Teams, and shared drive access.', priority: 3, createDate: '2024-01-18T09:00:00Z' },
+  { id: 1008, ticketNumber: 'T20240101.0008', title: 'Map network drive for finance team', description: 'Need to map \\\\fileserver\\finance$ as F: drive for 5 users in the finance department.', priority: 4, createDate: '2024-01-18T13:15:00Z' },
+  { id: 1009, ticketNumber: 'T20240101.0009', title: 'Employee departure - disable account', description: 'Bob Johnson last day was Friday. Need to disable AD account, remove groups, convert mailbox to shared, forward email to manager.', priority: 2, createDate: '2024-01-19T08:00:00Z' },
+  { id: 1010, ticketNumber: 'T20240101.0010', title: 'Computer running very slow', description: 'User says computer takes 10 minutes to boot and applications hang. Machine has not been rebooted in 45 days.', priority: 4, createDate: '2024-01-19T10:30:00Z' },
+  { id: 1011, ticketNumber: 'T20240101.0011', title: 'Set out of office for CEO vacation', description: 'CEO on vacation next week. Need out of office auto-reply set up for internal and external emails. Start Monday, end Friday.', priority: 2, createDate: '2024-01-19T15:00:00Z' },
+  { id: 1012, ticketNumber: 'T20240101.0012', title: 'SMART warning on workstation SSD', description: 'Datto RMM alert: SMART failure predicted on DESKTOP-SALES03 primary drive. Need to verify disk health.', priority: 1, createDate: '2024-01-20T07:45:00Z' },
+  { id: 1013, ticketNumber: 'T20240101.0013', title: 'Install printer on new workstation', description: 'New HP LaserJet at IP 192.168.1.50 needs to be added to DESKTOP-ACCT02.', priority: 4, createDate: '2024-01-20T11:00:00Z' },
+  { id: 1014, ticketNumber: 'T20240101.0014', title: 'Group policy not applying after OU move', description: 'Moved 3 workstations to new OU but GPO for drive mappings not applying. Need gpupdate force.', priority: 3, createDate: '2024-01-21T09:30:00Z' },
+  { id: 1015, ticketNumber: 'T20240101.0015', title: 'Excel crashes when opening large files', description: 'User reports Excel 365 crashes with files over 50MB. Other Office apps seem fine. May need Office repair.', priority: 3, createDate: '2024-01-21T14:00:00Z' },
+  { id: 1016, ticketNumber: 'T20240101.0016', title: 'Windows service stopped - backup agent', description: 'Backup agent service (Veeam Agent) stopped on SERVER02. Need service restarted.', priority: 1, createDate: '2024-01-22T06:30:00Z' },
+  { id: 1017, ticketNumber: 'T20240101.0017', title: 'Need mailbox permissions report for audit', description: 'Annual audit requires report of all shared mailbox permissions. Need Full Access, Send As, and Send on Behalf exported.', priority: 3, createDate: '2024-01-22T10:15:00Z' },
+  { id: 1018, ticketNumber: 'T20240101.0018', title: 'MFA reset for remote user', description: 'User got a new phone and needs MFA re-enrolled. Reset authenticator app registration.', priority: 2, createDate: '2024-01-22T16:00:00Z' },
 ];
+
+// ── Date Helpers ──
+function getDateRange(preset) {
+  const now = new Date();
+  const to = now.toISOString().slice(0, 10);
+  let from = null;
+
+  switch (preset) {
+    case 'today':
+      from = to;
+      break;
+    case '7d':
+      from = new Date(now - 7 * 86400000).toISOString().slice(0, 10);
+      break;
+    case '14d':
+      from = new Date(now - 14 * 86400000).toISOString().slice(0, 10);
+      break;
+    case '30d':
+      from = new Date(now - 30 * 86400000).toISOString().slice(0, 10);
+      break;
+    case '60d':
+      from = new Date(now - 60 * 86400000).toISOString().slice(0, 10);
+      break;
+    case '90d':
+      from = new Date(now - 90 * 86400000).toISOString().slice(0, 10);
+      break;
+    case 'custom':
+      from = $('#date-from').value || null;
+      return { from, to: $('#date-to').value || to };
+    case 'all':
+    default:
+      return { from: null, to: null };
+  }
+
+  return { from, to };
+}
 
 // ── Init ──
 async function init() {
@@ -38,7 +75,8 @@ async function init() {
 
     if (data.autotaskConfigured) {
       statusBar.className = 'status-bar connected';
-      statusText.textContent = 'Connected to Autotask API. Click "Fetch Tickets" to load and analyze.';
+      statusText.textContent = 'Connected to Autotask API. Select filters and click "Fetch Tickets" to load and analyze.';
+      loadQueues();
     } else {
       statusBar.className = 'status-bar demo';
       statusText.textContent = 'Autotask API not configured. Use "Load Demo Tickets" to test, or configure .env for live data.';
@@ -51,21 +89,57 @@ async function init() {
   showEmptyState();
 }
 
+// ── Load Queues into Dropdown ──
+async function loadQueues() {
+  try {
+    const res = await fetch('/api/queues');
+    if (!res.ok) return;
+    const queues = await res.json();
+    const select = $('#queue-select');
+    for (const q of queues) {
+      if (!q.isActive) continue;
+      const opt = document.createElement('option');
+      opt.value = q.value;
+      opt.textContent = q.label;
+      select.appendChild(opt);
+    }
+  } catch {
+    // Silently fail - queue dropdown just stays at "All Queues"
+  }
+}
+
 // ── Fetch from Autotask ──
 async function fetchTickets() {
-  statusText.textContent = 'Fetching tickets from Autotask...';
+  statusText.innerHTML = '<span class="loading-spinner"></span>Fetching tickets from Autotask...';
+
+  const queueId = $('#queue-select').value;
+  const { from, to } = getDateRange($('#timeframe-select').value);
+  const includeCompleted = $('#include-completed').checked;
+
+  const params = new URLSearchParams();
+  if (queueId) params.set('queueId', queueId);
+  if (from) params.set('dateFrom', from);
+  if (to) params.set('dateTo', to);
+  if (includeCompleted) params.set('includeCompleted', 'true');
+
   try {
-    const res = await fetch('/api/tickets');
+    const res = await fetch(`/api/tickets?${params}`);
     if (!res.ok) {
       const err = await res.json();
       throw new Error(err.error);
     }
     const data = await res.json();
     allTickets = data.tickets;
+    currentAnalytics = data.analytics;
+
     renderSummary(data.summary);
-    renderTickets(allTickets);
+    renderAnalytics(data.analytics, data.summary);
+    applyFilters();
+
     statusBar.className = 'status-bar connected';
-    statusText.textContent = `Loaded ${allTickets.length} tickets from Autotask. ${data.summary.quickHitterCount} quick hitters found.`;
+    const queueLabel = queueId ? ` in queue "${$('#queue-select').selectedOptions[0].text}"` : '';
+    const timeLabel = from ? ` (${from} to ${to})` : '';
+    statusText.textContent = `Loaded ${allTickets.length} tickets${queueLabel}${timeLabel}. ${data.summary.quickHitterCount} quick hitters found.`;
   } catch (err) {
     statusBar.className = 'status-bar error';
     statusText.textContent = `Error: ${err.message}`;
@@ -74,7 +148,7 @@ async function fetchTickets() {
 
 // ── Demo Mode ──
 async function loadDemo() {
-  statusText.textContent = 'Analyzing demo tickets...';
+  statusText.innerHTML = '<span class="loading-spinner"></span>Analyzing demo tickets...';
   try {
     const res = await fetch('/api/analyze', {
       method: 'POST',
@@ -83,8 +157,12 @@ async function loadDemo() {
     });
     const data = await res.json();
     allTickets = data.tickets;
+    currentAnalytics = data.analytics;
+
     renderSummary(data.summary);
-    renderTickets(allTickets);
+    renderAnalytics(data.analytics, data.summary);
+    applyFilters();
+
     statusBar.className = 'status-bar demo';
     statusText.textContent = `Demo: ${allTickets.length} tickets analyzed. ${data.summary.quickHitterCount} quick hitters identified.`;
   } catch (err) {
@@ -101,41 +179,206 @@ function renderSummary(summary) {
   $('#stat-automatable').textContent = summary.automatableCount;
   $('#stat-time-saved').textContent = summary.estimatedTimeSaved;
   $('#stat-avg-score').textContent = summary.avgAutomationScore + '%';
+}
 
-  // Category breakdown
-  const breakdown = $('#category-breakdown');
+// ── Render Analytics Tabs ──
+function renderAnalytics(analytics, summary) {
+  if (!analytics) return;
+
+  $('#analytics-section').classList.remove('hidden');
+
+  // Category bars
+  renderCategoryBars(summary.categoryBreakdown);
+
+  // Category detail table
+  renderCategoryTable(analytics.categoryDeepBreakdown);
+
+  // Priority bars
+  renderPriorityBars(analytics.priorityBreakdown);
+
+  // Trend chart
+  renderTrendChart(analytics.trendData);
+
+  // Top opportunities
+  renderOpportunities(analytics.topOpportunities);
+
+  // ROI projection
+  renderROI(analytics.roiProjection);
+}
+
+function renderCategoryBars(categoryBreakdown) {
   const barsContainer = $('#category-bars');
-  breakdown.classList.remove('hidden');
   barsContainer.innerHTML = '';
 
-  const maxCount = Math.max(...Object.values(summary.categoryBreakdown));
-  const sorted = Object.entries(summary.categoryBreakdown).sort((a, b) => b[1] - a[1]);
+  const maxCount = Math.max(...Object.values(categoryBreakdown));
+  const sorted = Object.entries(categoryBreakdown).sort((a, b) => b[1] - a[1]);
+  const colors = ['fill-primary', 'fill-green', 'fill-yellow', 'fill-orange', 'fill-purple', 'fill-cyan', 'fill-red'];
 
-  for (const [label, count] of sorted) {
+  sorted.forEach(([label, count], i) => {
     const pct = maxCount > 0 ? (count / maxCount) * 100 : 0;
+    const color = colors[i % colors.length];
     barsContainer.innerHTML += `
       <div class="cat-bar-row">
         <span class="cat-bar-label">${label}</span>
         <div class="cat-bar-track">
-          <div class="cat-bar-fill" style="width: ${pct}%"></div>
+          <div class="cat-bar-fill ${color}" style="width: ${pct}%"></div>
+        </div>
+        <span class="cat-bar-count">${count}</span>
+      </div>`;
+  });
+}
+
+function renderCategoryTable(categoryDeepBreakdown) {
+  const tbody = $('#category-detail-table tbody');
+  tbody.innerHTML = '';
+
+  for (const cat of categoryDeepBreakdown) {
+    tbody.innerHTML += `
+      <tr>
+        <td>${cat.category}</td>
+        <td>${cat.count}</td>
+        <td>${cat.pctOfTotal}%</td>
+        <td>${cat.avgAutomationScore}%</td>
+        <td>${cat.totalMinutesSaveable}</td>
+        <td>${cat.quickHitters}</td>
+      </tr>`;
+  }
+}
+
+function renderPriorityBars(priorityBreakdown) {
+  const container = $('#priority-bars');
+  container.innerHTML = '';
+
+  const maxCount = Math.max(...Object.values(priorityBreakdown));
+  const colorMap = { 'Critical': 'fill-red', 'High': 'fill-orange', 'Medium': 'fill-yellow', 'Low': 'fill-green' };
+
+  const entries = Object.entries(priorityBreakdown).sort((a, b) => {
+    const order = ['Critical', 'High', 'Medium', 'Low'];
+    return order.indexOf(a[0]) - order.indexOf(b[0]);
+  });
+
+  for (const [label, count] of entries) {
+    const pct = maxCount > 0 ? (count / maxCount) * 100 : 0;
+    const color = colorMap[label] || 'fill-primary';
+    container.innerHTML += `
+      <div class="cat-bar-row">
+        <span class="cat-bar-label">${label}</span>
+        <div class="cat-bar-track">
+          <div class="cat-bar-fill ${color}" style="width: ${pct}%"></div>
         </div>
         <span class="cat-bar-count">${count}</span>
       </div>`;
   }
 }
 
+function renderTrendChart(trendData) {
+  const container = $('#trend-chart');
+  const note = $('#trend-note');
+
+  if (!trendData || trendData.length === 0) {
+    container.innerHTML = '<div class="empty-state"><p>No date data available for trend analysis. Live Autotask tickets include creation dates.</p></div>';
+    note.textContent = '';
+    return;
+  }
+
+  const maxCount = Math.max(...trendData.map(d => d.count));
+  container.innerHTML = trendData.map(d => {
+    const heightPct = maxCount > 0 ? (d.count / maxCount) * 100 : 0;
+    const dateLabel = d.date.slice(5); // MM-DD
+    return `
+      <div class="trend-bar-wrap" title="${d.date}: ${d.count} tickets">
+        <div class="trend-bar" style="height: ${Math.max(heightPct, 3)}%"></div>
+        <span class="trend-bar-label">${dateLabel}</span>
+      </div>`;
+  }).join('');
+
+  const total = trendData.reduce((s, d) => s + d.count, 0);
+  const avg = (total / trendData.length).toFixed(1);
+  note.textContent = `${trendData.length} days shown | ${total} total tickets | ${avg} avg/day`;
+}
+
+function renderOpportunities(topOpportunities) {
+  const container = $('#opportunities-list');
+
+  if (!topOpportunities || topOpportunities.length === 0) {
+    container.innerHTML = '<div class="empty-state"><p>No automation opportunities identified yet.</p></div>';
+    return;
+  }
+
+  container.innerHTML = topOpportunities.map((opp, i) => `
+    <div class="opportunity-card">
+      <div class="opp-rank">#${i + 1}</div>
+      <div class="opp-details">
+        <div class="opp-name">${opp.category}</div>
+        <div class="opp-stats">
+          <span>${opp.count} tickets</span>
+          <span>Auto: ${opp.avgAutomationScore}%</span>
+          <span>${opp.totalMinutesSaveable} min saveable</span>
+        </div>
+      </div>
+      <div class="opp-impact">
+        <div class="opp-impact-number">${opp.impactScore}</div>
+        <div class="opp-impact-label">Impact Score</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderROI(roi) {
+  const container = $('#roi-content');
+
+  if (!roi) {
+    container.innerHTML = '<div class="empty-state"><p>No ROI data available.</p></div>';
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="roi-card">
+      <div class="roi-number">${roi.totalMinutesInBatch}</div>
+      <div class="roi-label">Total Minutes in Batch</div>
+    </div>
+    <div class="roi-card">
+      <div class="roi-number">${roi.automatableMinutes}</div>
+      <div class="roi-label">Automatable Minutes</div>
+    </div>
+    <div class="roi-card">
+      <div class="roi-number">${roi.monthlySavingsHours}h</div>
+      <div class="roi-label">Monthly Hours Saved</div>
+    </div>
+    <div class="roi-card">
+      <div class="roi-number">${roi.annualSavingsHours}h</div>
+      <div class="roi-label">Annual Hours Saved</div>
+    </div>
+    <div class="roi-card roi-highlight">
+      <div class="roi-number">$${roi.annualCostSavings.toLocaleString()}</div>
+      <div class="roi-label">Annual Cost Savings</div>
+    </div>
+    <div class="roi-card">
+      <div class="roi-number">$${roi.hourlyRateUsed}/hr</div>
+      <div class="roi-label">Rate Used</div>
+    </div>
+  `;
+}
+
 // ── Render Tickets ──
 function renderTickets(tickets) {
   if (!tickets.length) {
     showEmptyState();
+    $('#ticket-count-label').textContent = '';
     return;
   }
+
+  $('#ticket-count-label').textContent = `Showing ${tickets.length} of ${allTickets.length}`;
 
   ticketsContainer.innerHTML = tickets.map(t => {
     const scoreClass = t.automationScore >= 80 ? 'high' : t.automationScore >= 50 ? 'medium' : 'low';
     const scripts = (t.suggestedScripts || []).map(s =>
       `<button class="script-btn" onclick="viewScript('${s.type}', '${s.name}')">${s.label}</button>`
     ).join('');
+
+    const priorityMap = { 1: 'Critical', 2: 'High', 3: 'Medium', 4: 'Low' };
+    const priorityLabel = priorityMap[t.priority] || '';
+    const priorityClass = priorityLabel ? `badge-priority-${priorityLabel.toLowerCase()}` : '';
 
     return `
       <div class="ticket-card ${t.isQuickHitter ? 'quick-hitter' : ''}">
@@ -147,6 +390,7 @@ function renderTickets(tickets) {
           <span class="badge badge-category">${t.categoryLabel}</span>
           ${t.isQuickHitter ? '<span class="badge badge-quick">Quick Hitter</span>' : ''}
           ${t.estimatedMinutes ? `<span class="badge badge-time">~${t.estimatedMinutes} min</span>` : ''}
+          ${priorityLabel ? `<span class="badge ${priorityClass}">${priorityLabel}</span>` : ''}
           <div class="score-bar">
             Auto:
             <div class="score-track">
@@ -184,7 +428,6 @@ async function viewScript(type, filename) {
   }
 }
 
-// Make viewScript available globally for onclick handlers
 window.viewScript = viewScript;
 
 function closeScriptModal() {
@@ -245,17 +488,50 @@ function applyFilters() {
 
   if (category === 'quick') {
     filtered = filtered.filter(t => t.isQuickHitter);
+  } else if (category === 'automatable') {
+    filtered = filtered.filter(t => t.automationScore >= 70);
   }
 
   if (sort === 'time') {
     filtered.sort((a, b) => (a.estimatedMinutes || 99) - (b.estimatedMinutes || 99));
   } else if (sort === 'confidence') {
     filtered.sort((a, b) => b.matchConfidence - a.matchConfidence);
+  } else if (sort === 'priority') {
+    filtered.sort((a, b) => (a.priority || 99) - (b.priority || 99));
   } else {
     filtered.sort((a, b) => b.automationScore - a.automationScore);
   }
 
   renderTickets(filtered);
+}
+
+// ── Tab Switching ──
+function setupTabs() {
+  const tabBtns = document.querySelectorAll('.tab-btn');
+  tabBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      tabBtns.forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+
+      btn.classList.add('active');
+      const tabId = btn.getAttribute('data-tab');
+      document.getElementById(tabId).classList.add('active');
+    });
+  });
+}
+
+// ── Timeframe Toggle ──
+function setupTimeframeToggle() {
+  const timeframeSelect = $('#timeframe-select');
+  const customRange = $('#custom-date-range');
+
+  timeframeSelect.addEventListener('change', () => {
+    if (timeframeSelect.value === 'custom') {
+      customRange.classList.remove('hidden');
+    } else {
+      customRange.classList.add('hidden');
+    }
+  });
 }
 
 // ── Toast Notification ──
@@ -292,6 +568,10 @@ $('#script-modal').addEventListener('click', (e) => {
 $('#library-modal').addEventListener('click', (e) => {
   if (e.target === $('#library-modal')) $('#library-modal').classList.add('hidden');
 });
+
+// Setup tabs & timeframe toggle
+setupTabs();
+setupTimeframeToggle();
 
 // Init on load
 init();

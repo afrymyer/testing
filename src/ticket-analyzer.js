@@ -260,4 +260,100 @@ function getSuggestedScripts(category) {
   return scriptMap[category] || [];
 }
 
-module.exports = { analyzeTicket, analyzeTickets, getSummary, CATEGORY_PATTERNS };
+/**
+ * Get deep analytics for a batch of analyzed tickets.
+ * Includes trend data, priority breakdown, ROI projections, and top opportunities.
+ */
+function getDeepAnalytics(analyzedTickets, rawTickets = []) {
+  // Priority breakdown
+  const priorityMap = { 1: 'Critical', 2: 'High', 3: 'Medium', 4: 'Low' };
+  const priorityBreakdown = {};
+  for (const t of analyzedTickets) {
+    const pLabel = priorityMap[t.priority] || `Priority ${t.priority || 'None'}`;
+    priorityBreakdown[pLabel] = (priorityBreakdown[pLabel] || 0) + 1;
+  }
+
+  // Category deep stats (count, avg automation score, total time saveable)
+  const categoryStats = {};
+  for (const t of analyzedTickets) {
+    if (!categoryStats[t.categoryLabel]) {
+      categoryStats[t.categoryLabel] = {
+        count: 0,
+        totalAutomationScore: 0,
+        totalMinutes: 0,
+        quickHitters: 0,
+      };
+    }
+    const cs = categoryStats[t.categoryLabel];
+    cs.count++;
+    cs.totalAutomationScore += t.automationScore;
+    cs.totalMinutes += t.estimatedMinutes || 0;
+    if (t.isQuickHitter) cs.quickHitters++;
+  }
+
+  const categoryDeepBreakdown = Object.entries(categoryStats)
+    .map(([label, stats]) => ({
+      category: label,
+      count: stats.count,
+      avgAutomationScore: stats.count ? Math.round(stats.totalAutomationScore / stats.count) : 0,
+      totalMinutesSaveable: stats.totalMinutes,
+      quickHitters: stats.quickHitters,
+      pctOfTotal: analyzedTickets.length ? Math.round((stats.count / analyzedTickets.length) * 100) : 0,
+    }))
+    .sort((a, b) => b.count - a.count);
+
+  // Tickets by creation date (trend) using raw ticket createDate if available
+  const ticketsByDay = {};
+  for (const t of rawTickets) {
+    const dateStr = t.createDate
+      ? new Date(t.createDate).toISOString().slice(0, 10)
+      : null;
+    if (dateStr) {
+      ticketsByDay[dateStr] = (ticketsByDay[dateStr] || 0) + 1;
+    }
+  }
+  const trendData = Object.entries(ticketsByDay)
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([date, count]) => ({ date, count }));
+
+  // Top automation opportunities: highest score + highest volume combos
+  const topOpportunities = categoryDeepBreakdown
+    .filter(c => c.category !== 'Uncategorized')
+    .map(c => ({
+      category: c.category,
+      count: c.count,
+      avgAutomationScore: c.avgAutomationScore,
+      totalMinutesSaveable: c.totalMinutesSaveable,
+      impactScore: Math.round((c.avgAutomationScore * c.count * (c.totalMinutesSaveable || 1)) / 100),
+    }))
+    .sort((a, b) => b.impactScore - a.impactScore)
+    .slice(0, 5);
+
+  // ROI projection (annualized from current batch)
+  const totalMinutes = analyzedTickets.reduce((s, t) => s + (t.estimatedMinutes || 0), 0);
+  const automatableMinutes = analyzedTickets
+    .filter(t => t.automationScore >= 70)
+    .reduce((s, t) => s + (t.estimatedMinutes || 0), 0);
+  const avgHourlyRate = 75; // default tech hourly rate
+  const monthlySavingsHours = automatableMinutes / 60;
+  const annualSavingsHours = monthlySavingsHours * 12;
+
+  const roiProjection = {
+    totalMinutesInBatch: totalMinutes,
+    automatableMinutes,
+    monthlySavingsHours: Math.round(monthlySavingsHours * 10) / 10,
+    annualSavingsHours: Math.round(annualSavingsHours * 10) / 10,
+    annualCostSavings: Math.round(annualSavingsHours * avgHourlyRate),
+    hourlyRateUsed: avgHourlyRate,
+  };
+
+  return {
+    priorityBreakdown,
+    categoryDeepBreakdown,
+    trendData,
+    topOpportunities,
+    roiProjection,
+  };
+}
+
+module.exports = { analyzeTicket, analyzeTickets, getSummary, getDeepAnalytics, CATEGORY_PATTERNS };

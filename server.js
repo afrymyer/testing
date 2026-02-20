@@ -2,7 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const path = require('path');
 const AutotaskClient = require('./src/autotask-client');
-const { analyzeTickets, getSummary, CATEGORY_PATTERNS } = require('./src/ticket-analyzer');
+const { analyzeTickets, getSummary, getDeepAnalytics, CATEGORY_PATTERNS } = require('./src/ticket-analyzer');
 const { loadScript, listScripts } = require('./src/script-mapper');
 
 const app = express();
@@ -37,6 +37,7 @@ app.get('/api/status', (req, res) => {
 
 /**
  * GET /api/tickets - Fetch and analyze open tickets from Autotask
+ * Query params: queueId, maxRecords, dateFrom, dateTo, includeCompleted
  */
 app.get('/api/tickets', async (req, res) => {
   try {
@@ -46,16 +47,27 @@ app.get('/api/tickets', async (req, res) => {
       });
     }
 
-    const { queueId, maxRecords } = req.query;
-    const tickets = await autotaskClient.getOpenTickets({
+    const { queueId, maxRecords, dateFrom, dateTo, includeCompleted } = req.query;
+    const opts = {
       queueId: queueId ? parseInt(queueId) : undefined,
       maxRecords: maxRecords ? parseInt(maxRecords) : 500,
-    });
+      dateFrom: dateFrom || undefined,
+      dateTo: dateTo || undefined,
+    };
+
+    let tickets = await autotaskClient.getOpenTickets(opts);
+
+    // Optionally merge completed tickets for full analysis
+    if (includeCompleted === 'true') {
+      const completed = await autotaskClient.getCompletedTickets(opts);
+      tickets = tickets.concat(completed);
+    }
 
     const analyzed = analyzeTickets(tickets);
     const summary = getSummary(analyzed);
+    const analytics = getDeepAnalytics(analyzed, tickets);
 
-    res.json({ tickets: analyzed, summary });
+    res.json({ tickets: analyzed, summary, analytics });
   } catch (err) {
     console.error('Failed to fetch tickets:', err.message);
     res.status(500).json({ error: err.message });
@@ -74,8 +86,9 @@ app.post('/api/analyze', (req, res) => {
 
   const analyzed = analyzeTickets(tickets);
   const summary = getSummary(analyzed);
+  const analytics = getDeepAnalytics(analyzed, tickets);
 
-  res.json({ tickets: analyzed, summary });
+  res.json({ tickets: analyzed, summary, analytics });
 });
 
 /**

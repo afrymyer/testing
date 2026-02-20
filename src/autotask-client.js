@@ -24,10 +24,10 @@ class AutotaskClient {
   }
 
   /**
-   * Fetch open tickets, optionally filtered by queue/status.
+   * Fetch open tickets, optionally filtered by queue/status/date range.
    * Autotask REST API uses a query object for filtering.
    */
-  async getOpenTickets({ queueId, maxRecords = 500 } = {}) {
+  async getOpenTickets({ queueId, maxRecords = 500, dateFrom, dateTo } = {}) {
     const filter = {
       filter: [
         { op: 'noteq', field: 'status', value: 5 }, // 5 = Complete
@@ -36,6 +36,36 @@ class AutotaskClient {
     };
     if (queueId) {
       filter.filter.push({ op: 'eq', field: 'queueID', value: queueId });
+    }
+    if (dateFrom) {
+      filter.filter.push({ op: 'gte', field: 'createDate', value: dateFrom });
+    }
+    if (dateTo) {
+      filter.filter.push({ op: 'lte', field: 'createDate', value: dateTo });
+    }
+    filter.MaxRecords = maxRecords;
+
+    const data = await this.request('/Tickets/query', 'POST', filter);
+    return data.items || [];
+  }
+
+  /**
+   * Fetch completed tickets in a date range for historical analysis.
+   */
+  async getCompletedTickets({ queueId, maxRecords = 500, dateFrom, dateTo } = {}) {
+    const filter = {
+      filter: [
+        { op: 'eq', field: 'status', value: 5 }, // 5 = Complete
+      ],
+    };
+    if (queueId) {
+      filter.filter.push({ op: 'eq', field: 'queueID', value: queueId });
+    }
+    if (dateFrom) {
+      filter.filter.push({ op: 'gte', field: 'createDate', value: dateFrom });
+    }
+    if (dateTo) {
+      filter.filter.push({ op: 'lte', field: 'createDate', value: dateTo });
     }
     filter.MaxRecords = maxRecords;
 

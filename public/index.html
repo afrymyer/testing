@@ -9,7 +9,7 @@
 <body>
   <header>
     <h1>Autotask Ticket Analyzer</h1>
-    <p class="subtitle">Quick-hitter identification &amp; automation scripts</p>
+    <p class="subtitle">Deep analysis, automation scoring &amp; PowerShell script mapping</p>
   </header>
 
   <main>
@@ -20,21 +20,71 @@
 
     <!-- Controls -->
     <section class="controls">
-      <button id="btn-fetch" class="btn btn-primary">Fetch Tickets from Autotask</button>
-      <button id="btn-demo" class="btn btn-secondary">Load Demo Tickets</button>
-      <button id="btn-scripts" class="btn btn-secondary">Browse All Scripts</button>
-      <div class="filter-group">
-        <label for="filter-category">Filter:</label>
-        <select id="filter-category">
-          <option value="all">All Categories</option>
-          <option value="quick">Quick Hitters Only</option>
-        </select>
-        <label for="sort-by">Sort:</label>
-        <select id="sort-by">
-          <option value="automation">Automation Score</option>
-          <option value="time">Est. Time</option>
-          <option value="confidence">Confidence</option>
-        </select>
+      <div class="controls-row">
+        <button id="btn-fetch" class="btn btn-primary">Fetch Tickets from Autotask</button>
+        <button id="btn-demo" class="btn btn-secondary">Load Demo Tickets</button>
+        <button id="btn-scripts" class="btn btn-secondary">Browse All Scripts</button>
+      </div>
+
+      <div class="controls-row controls-filters">
+        <!-- Queue Selector -->
+        <div class="filter-item">
+          <label for="queue-select">Queue:</label>
+          <select id="queue-select">
+            <option value="">All Queues</option>
+          </select>
+        </div>
+
+        <!-- Time Frame Presets -->
+        <div class="filter-item">
+          <label for="timeframe-select">Time Frame:</label>
+          <select id="timeframe-select">
+            <option value="all">All Time</option>
+            <option value="today">Today</option>
+            <option value="7d">Last 7 Days</option>
+            <option value="14d">Last 14 Days</option>
+            <option value="30d" selected>Last 30 Days</option>
+            <option value="60d">Last 60 Days</option>
+            <option value="90d">Last 90 Days</option>
+            <option value="custom">Custom Range</option>
+          </select>
+        </div>
+
+        <!-- Custom Date Range (hidden by default) -->
+        <div id="custom-date-range" class="filter-item hidden">
+          <label for="date-from">From:</label>
+          <input type="date" id="date-from" />
+          <label for="date-to">To:</label>
+          <input type="date" id="date-to" />
+        </div>
+
+        <!-- Include Completed Toggle -->
+        <div class="filter-item">
+          <label class="toggle-label">
+            <input type="checkbox" id="include-completed" />
+            Include Completed
+          </label>
+        </div>
+
+        <!-- Category & Sort -->
+        <div class="filter-item">
+          <label for="filter-category">Filter:</label>
+          <select id="filter-category">
+            <option value="all">All Categories</option>
+            <option value="quick">Quick Hitters Only</option>
+            <option value="automatable">Automatable (70%+)</option>
+          </select>
+        </div>
+
+        <div class="filter-item">
+          <label for="sort-by">Sort:</label>
+          <select id="sort-by">
+            <option value="automation">Automation Score</option>
+            <option value="time">Est. Time</option>
+            <option value="confidence">Confidence</option>
+            <option value="priority">Priority</option>
+          </select>
+        </div>
       </div>
     </section>
 
@@ -62,19 +112,86 @@
       </div>
     </section>
 
-    <!-- Category Breakdown -->
-    <section id="category-breakdown" class="category-breakdown hidden">
-      <h2>Category Breakdown</h2>
-      <div id="category-bars"></div>
+    <!-- Tabbed Analytics -->
+    <section id="analytics-section" class="analytics-section hidden">
+      <div class="tab-bar">
+        <button class="tab-btn active" data-tab="tab-categories">Categories</button>
+        <button class="tab-btn" data-tab="tab-priorities">Priorities</button>
+        <button class="tab-btn" data-tab="tab-trends">Trends</button>
+        <button class="tab-btn" data-tab="tab-opportunities">Top Opportunities</button>
+        <button class="tab-btn" data-tab="tab-roi">ROI Projection</button>
+      </div>
+
+      <!-- Tab: Category Breakdown -->
+      <div id="tab-categories" class="tab-panel active">
+        <div class="panel-card">
+          <h3>Category Breakdown</h3>
+          <div id="category-bars"></div>
+        </div>
+        <div class="panel-card">
+          <h3>Category Details</h3>
+          <table class="data-table" id="category-detail-table">
+            <thead>
+              <tr>
+                <th>Category</th>
+                <th>Count</th>
+                <th>% of Total</th>
+                <th>Avg Auto Score</th>
+                <th>Total Min Saveable</th>
+                <th>Quick Hitters</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Tab: Priority Breakdown -->
+      <div id="tab-priorities" class="tab-panel">
+        <div class="panel-card">
+          <h3>Priority Distribution</h3>
+          <div id="priority-bars"></div>
+        </div>
+      </div>
+
+      <!-- Tab: Trends -->
+      <div id="tab-trends" class="tab-panel">
+        <div class="panel-card">
+          <h3>Ticket Volume Over Time</h3>
+          <div id="trend-chart" class="trend-chart"></div>
+          <p class="chart-note" id="trend-note"></p>
+        </div>
+      </div>
+
+      <!-- Tab: Top Opportunities -->
+      <div id="tab-opportunities" class="tab-panel">
+        <div class="panel-card">
+          <h3>Top Automation Opportunities</h3>
+          <p class="panel-desc">Categories ranked by impact score (volume x automation score x time savings)</p>
+          <div id="opportunities-list"></div>
+        </div>
+      </div>
+
+      <!-- Tab: ROI Projection -->
+      <div id="tab-roi" class="tab-panel">
+        <div class="panel-card">
+          <h3>ROI Projection</h3>
+          <p class="panel-desc">Estimated savings if automatable tickets are fully automated</p>
+          <div id="roi-content" class="roi-grid"></div>
+        </div>
+      </div>
     </section>
 
     <!-- Ticket List -->
     <section id="ticket-list" class="ticket-list">
-      <h2>Analyzed Tickets</h2>
+      <div class="section-header">
+        <h2>Analyzed Tickets</h2>
+        <span id="ticket-count-label" class="count-label"></span>
+      </div>
       <div id="tickets"></div>
     </section>
 
-    <!-- Script Browser Modal -->
+    <!-- Script Viewer Modal -->
     <div id="script-modal" class="modal hidden">
       <div class="modal-content">
         <div class="modal-header">
