@@ -944,7 +944,7 @@ const SDE_KPI_INFO = {
   'Avg Resolution Time': 'Average time from ticket creation to resolution (Resolved Time Met in Autotask) for closed reactive tickets with worked hours. Target: 30 minutes or less.',
   'Avg Response Time': 'Average time from ticket creation to resolution plan being set (Resolution Plan Met in Autotask) for closed reactive tickets with worked hours. Target: 30 minutes or less.',
   'Total Time Entered': 'Total time entered by SDEs on all reactive tickets and non-billable MAC requests worked for the month, regardless of open or closed status. Actual time must be reported. Helps determine SDE effective utilization and labor per endpoint. Assists leadership with analysis of SDE efficiency and ensures time is accurately applied for resolution time KPI accuracy.',
-  'Open Tickets at EOD': 'Number of tickets still open at end of day. Target: 25 or fewer. More than 25 or a steadily rising count indicates team capacity, operational process, or skill set issues. Starting the day with fewer tickets reduces team stress. Determining how to reduce tickets on board at day\'s end is essential.',
+  'Open Tickets at EOD': 'Average number of reactive tickets open at end of each business day across the selected time frame. Target: 25 or fewer. More than 25 or a steadily rising count indicates team capacity, operational process, or skill set issues.',
   'Tickets > 5 Days Old': 'Average number of tickets over 5 days old in the reactive services queue for the month. Target: 10 tickets or fewer. Helps identify stagnating tickets and SDE resource, performance, and technical skillset challenges. Also helps identify if escalation processes are being used effectively by team members.',
   'Agreement Utilization': 'Billable hours logged by SDEs (against agreements or MACs) compared to dedicated team hours. Auto-calculated based on SDE headcount assuming a 40-hour work week. Target: 90% or higher billable utilization. Remaining time is typically utilized by internal meetings, PTO, and training.',
   'CSAT Score Average': 'Average CSAT score for all closed tickets that received a CSAT response for the month. Target: Highest possible — aim for an "A" rating. An "A" rating ensures clients are happy with Service Desk performance and is critical to client success and managed service agreement longevity. Manual input.',
@@ -977,7 +977,6 @@ function renderSDEMetrics() {
   const totalTickets = filteredTickets.length;
   const closedTicketsList = filteredTickets.filter(t => t.status === 5 || t.status === 'Complete');
   const closedTickets = closedTicketsList.length;
-  const openTicketsList = filteredTickets.filter(t => t.status !== 5 && t.status !== 'Complete');
 
   // Split tickets by queue type (filtered = per-tech for closed metrics)
   const reactiveTicketsFiltered = filteredTickets.filter(t => isReactiveQueue(t.queueID));
@@ -1077,8 +1076,47 @@ function renderSDEMetrics() {
   const timeSource = hasRealTimeData ? 'auto' : (ticketsWithTime.length > 0 ? 'est' : 'needs-data');
   const resTimeSource = ticketsWithResolved.length > 0 ? 'auto' : 'needs-data';
 
-  const openTickets = totalTickets - closedTickets;
-  const avgOpenAtEOD = hasCompletedData ? openTickets : totalTickets;
+  // Avg Open Tickets at EOD - reactive only, averaged across each business day in the range
+  const reactiveAll = hasQueueData ? allReactiveTickets : allTickets;
+  const reactiveWithDates = reactiveAll.filter(t => t.createDate);
+  let avgOpenAtEOD = 'N/A';
+  const openAtEODList = [];
+  if (reactiveWithDates.length > 0 && from) {
+    const rangeStart = new Date(from);
+    const rangeEnd = new Date(to || new Date());
+    rangeEnd.setHours(23, 59, 59, 999);
+    let dayCount = 0;
+    let totalOpen = 0;
+    const cur = new Date(rangeStart);
+    cur.setHours(23, 59, 59, 999); // end of day
+    while (cur <= rangeEnd) {
+      const dow = cur.getDay();
+      if (dow !== 0 && dow !== 6) {
+        // Count tickets that existed by EOD (created on or before) and were not yet completed
+        const eodTime = cur.getTime();
+        let openCount = 0;
+        for (const t of reactiveWithDates) {
+          const created = new Date(t.createDate).getTime();
+          if (created > eodTime) continue; // not created yet
+          // If ticket has a resolvedDateTime before this EOD, it was already closed
+          if (t.resolvedDateTime && new Date(t.resolvedDateTime).getTime() <= eodTime) continue;
+          // If no resolvedDateTime but status is complete, use lastActivityDate or completedDate as proxy
+          if (!t.resolvedDateTime && (t.status === 5 || t.status === 'Complete')) {
+            const completedTime = t.completedDate ? new Date(t.completedDate).getTime()
+              : t.lastActivityDate ? new Date(t.lastActivityDate).getTime() : null;
+            if (completedTime && completedTime <= eodTime) continue;
+          }
+          openCount++;
+        }
+        totalOpen += openCount;
+        dayCount++;
+      }
+      cur.setDate(cur.getDate() + 1);
+    }
+    avgOpenAtEOD = dayCount > 0 ? Math.round(totalOpen / dayCount) : 'N/A';
+  }
+  // Build the list of currently-open reactive tickets for drilldown
+  const openTicketsList = reactiveAll.filter(t => t.status !== 5 && t.status !== 'Complete');
 
   const now = new Date();
   const fiveBusinessDaysAgo = subtractBusinessDays(now, 5);
@@ -1143,7 +1181,7 @@ function renderSDEMetrics() {
     ${sdeCard('Avg Resolution Time', avgResolutionTime !== 'N/A' ? avgResolutionTime + ' min' : 'N/A', avgResolutionTime !== 'N/A' ? resTimeSource : 'needs-data')}
     ${sdeCard('Avg Response Time', avgResponseTime !== 'N/A' ? avgResponseTime + ' min' : 'N/A', avgResponseSource)}
     ${sdeCard('Total Time Entered', totalTimeEntered + ' min', timeSource)}
-    ${sdeCard('Open Tickets at EOD', avgOpenAtEOD, hasCompletedData ? 'auto' : 'est')}
+    ${sdeCard('Open Tickets at EOD', avgOpenAtEOD !== 'N/A' ? avgOpenAtEOD + ' avg' : 'N/A', avgOpenAtEOD !== 'N/A' ? 'auto' : 'needs-data')}
     ${sdeCard('Tickets > 5 Days Old', oldTicketsList.length, 'auto')}
   `;
 
