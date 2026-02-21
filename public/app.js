@@ -941,8 +941,8 @@ const SDE_KPI_INFO = {
   'SDE Headcount': 'Number of Service Desk Engineers in the period. Auto-set when technicians are selected.',
   'Avg Closed/Day/SDE': 'Average tickets closed per business day per SDE. Reactive Closed / Business Days / Headcount.',
   'Avg Escalation Closed/Day': 'Number of escalation tickets closed during the month, divided by business days. Target: 4 or higher per day. Identifies escalation engineer efficiency and ensures escalated issues are resolved without stagnation. Escalation tickets are identified by the Autotask UDF "Escalate" = Yes.',
-  'Avg Resolution Time': 'Average resolution time for all reactive tickets closed during the month. Resolution time = total time worked from first touch (status changed to In Progress) through completion (status changed to Complete). Target: 30 minutes or less. Critical to client success and retention.',
-  'Avg Response Time': 'Average response time for closed reactive tickets during the month. Measured from when ticket is entered in queue (opened and assigned to SDE) until first touch by SDE (status changed to In Progress). Target: 30 minutes or less. Critical to client success and retention.',
+  'Avg Resolution Time': 'Average time from ticket creation to resolution (Resolved Time Met in Autotask) for closed reactive tickets with worked hours. Target: 30 minutes or less.',
+  'Avg Response Time': 'Average time from ticket creation to resolution plan being set (Resolution Plan Met in Autotask) for closed reactive tickets with worked hours. Target: 30 minutes or less.',
   'Total Time Entered': 'Total time entered by SDEs on all reactive tickets and non-billable MAC requests worked for the month, regardless of open or closed status. Actual time must be reported. Helps determine SDE effective utilization and labor per endpoint. Assists leadership with analysis of SDE efficiency and ensures time is accurately applied for resolution time KPI accuracy.',
   'Open Tickets at EOD': 'Number of tickets still open at end of day. Target: 25 or fewer. More than 25 or a steadily rising count indicates team capacity, operational process, or skill set issues. Starting the day with fewer tickets reduces team stress. Determining how to reduce tickets on board at day\'s end is essential.',
   'Tickets > 5 Days Old': 'Average number of tickets over 5 days old in the reactive services queue for the month. Target: 10 tickets or fewer. Helps identify stagnating tickets and SDE resource, performance, and technical skillset challenges. Also helps identify if escalation processes are being used effectively by team members.',
@@ -1045,18 +1045,29 @@ function renderSDEMetrics() {
   const ticketsWithTime = filteredTickets.filter(t => t.estimatedMinutes > 0);
   const hasRealTimeData = ticketsWithWorkedHours.length > 0;
 
-  // Avg Resolution Time - reactive closed tickets with worked hours > 0
+  // Avg Response Time - from Autotask resolutionPlanDateTime (Resolution Plan Met)
+  // Time from ticket creation to resolution plan being set
   const reactiveClosedWithHours = reactiveClosedList.filter(t => t.workedHours > 0);
-  const avgResolutionTime = reactiveClosedWithHours.length > 0
-    ? Math.round((reactiveClosedWithHours.reduce((s, t) => s + t.workedHours, 0) / reactiveClosedWithHours.length) * 60)
-    : ticketsWithTime.length > 0
-      ? Math.round(ticketsWithTime.reduce((s, t) => s + t.estimatedMinutes, 0) / ticketsWithTime.length)
-      : 'N/A';
+  const ticketsWithResponsePlan = reactiveClosedWithHours.filter(t => t.createDate && t.resolutionPlanDateTime);
+  const avgResponseTime = ticketsWithResponsePlan.length > 0
+    ? Math.round(ticketsWithResponsePlan.reduce((s, t) => {
+        const created = new Date(t.createDate).getTime();
+        const planMet = new Date(t.resolutionPlanDateTime).getTime();
+        return s + (planMet - created);
+      }, 0) / ticketsWithResponsePlan.length / 60000) // convert ms to minutes
+    : 'N/A';
+  const avgResponseSource = ticketsWithResponsePlan.length > 0 ? 'auto' : 'needs-data';
 
-  // Avg Response Time - reactive closed tickets with worked hours > 0
-  // (placeholder until Autotask SLA data is available)
-  const avgResponseTime = 'N/A';
-  const avgResponseSource = 'needs-data';
+  // Avg Resolution Time - from Autotask resolvedDateTime (Resolved Time Met)
+  // Time from ticket creation to resolution
+  const ticketsWithResolved = reactiveClosedWithHours.filter(t => t.createDate && t.resolvedDateTime);
+  const avgResolutionTime = ticketsWithResolved.length > 0
+    ? Math.round(ticketsWithResolved.reduce((s, t) => {
+        const created = new Date(t.createDate).getTime();
+        const resolved = new Date(t.resolvedDateTime).getTime();
+        return s + (resolved - created);
+      }, 0) / ticketsWithResolved.length / 60000) // convert ms to minutes
+    : 'N/A';
 
   // Total Time Entered - all tickets regardless of queue
   const totalTimeEntered = hasRealTimeData
@@ -1064,7 +1075,7 @@ function renderSDEMetrics() {
     : ticketsWithTime.reduce((s, t) => s + t.estimatedMinutes, 0);
 
   const timeSource = hasRealTimeData ? 'auto' : (ticketsWithTime.length > 0 ? 'est' : 'needs-data');
-  const resTimeSource = reactiveClosedWithHours.length > 0 ? 'auto' : (ticketsWithTime.length > 0 ? 'est' : 'needs-data');
+  const resTimeSource = ticketsWithResolved.length > 0 ? 'auto' : 'needs-data';
 
   const openTickets = totalTickets - closedTickets;
   const avgOpenAtEOD = hasCompletedData ? openTickets : totalTickets;
@@ -1102,8 +1113,8 @@ function renderSDEMetrics() {
       tickets: hasTechFilter ? [...techReactiveClosedList, ...techMACClosedList] : [...reactiveClosedList, ...macClosedList],
     },
     'Avg Closed/Day/SDE': reactiveClosedList,
-    'Avg Resolution Time': reactiveClosedWithHours,
-    'Avg Response Time': reactiveClosedWithHours,
+    'Avg Resolution Time': ticketsWithResolved,
+    'Avg Response Time': ticketsWithResponsePlan,
     'Total Time Entered': ticketsWithWorkedHours.length > 0 ? ticketsWithWorkedHours : ticketsWithTime,
     'Open Tickets at EOD': openTicketsList,
     'Tickets > 5 Days Old': oldTicketsList,
@@ -1130,7 +1141,7 @@ function renderSDEMetrics() {
     ${sdeCard('Avg Closed/Day/SDE', avgClosedPerDayPerSDE, hasCompletedData ? 'calc' : 'needs-data')}
     ${sdeCard('Avg Escalation Closed/Day', avgEscPerDay, escalationClosed > 0 ? 'calc' : 'manual')}
     ${sdeCard('Avg Resolution Time', avgResolutionTime !== 'N/A' ? avgResolutionTime + ' min' : 'N/A', avgResolutionTime !== 'N/A' ? resTimeSource : 'needs-data')}
-    ${sdeCard('Avg Response Time', avgResponseTime !== 'N/A' ? avgResponseTime + ' min' : 'N/A', avgResponseSource, 'Requires Autotask first-touch timestamp data')}
+    ${sdeCard('Avg Response Time', avgResponseTime !== 'N/A' ? avgResponseTime + ' min' : 'N/A', avgResponseSource)}
     ${sdeCard('Total Time Entered', totalTimeEntered + ' min', timeSource)}
     ${sdeCard('Open Tickets at EOD', avgOpenAtEOD, hasCompletedData ? 'auto' : 'est')}
     ${sdeCard('Tickets > 5 Days Old', oldTicketsList.length, 'auto')}
