@@ -987,7 +987,7 @@ function renderSDEMetrics() {
 
   const hasQueueData = allQueues.length > 0 && allTickets.some(t => t.queueID);
 
-  // Received = ALL tickets for that queue in the time frame (not tech-filtered), with worked hours > 0
+  // All queue splits from allTickets (not tech-filtered) with worked hours > 0
   const allReactiveTickets = allTickets.filter(t => isReactiveQueue(t.queueID));
   const allMACTickets = allTickets.filter(t => isMACQueue(t.queueID));
 
@@ -998,12 +998,11 @@ function renderSDEMetrics() {
     ? allMACTickets.filter(t => t.workedHours > 0)
     : [];
 
-  // Closed = per-tech filtered, with worked hours > 0
   const reactiveClosedList = hasQueueData
-    ? reactiveTicketsFiltered.filter(t => (t.status === 5 || t.status === 'Complete') && t.workedHours > 0)
-    : closedTicketsList.filter(t => t.workedHours > 0);
+    ? allReactiveTickets.filter(t => (t.status === 5 || t.status === 'Complete') && t.workedHours > 0)
+    : allTickets.filter(t => (t.status === 5 || t.status === 'Complete') && t.workedHours > 0);
   const macClosedList = hasQueueData
-    ? macTicketsFiltered.filter(t => (t.status === 5 || t.status === 'Complete') && t.workedHours > 0)
+    ? allMACTickets.filter(t => (t.status === 5 || t.status === 'Complete') && t.workedHours > 0)
     : [];
 
   const hasCompletedData = closedTickets > 0;
@@ -1015,8 +1014,22 @@ function renderSDEMetrics() {
   const totalReceived = reactiveReceived + macReceived;
   const totalClosed = reactiveClosed + macClosed;
 
-  // Kill Rate uses the same worked-hours-filtered lists
-  const killRate = totalReceived > 0 ? ((totalClosed / totalReceived) * 100).toFixed(1) : 'N/A';
+  // Total Kill Rate = all closed vs all received (entire queue)
+  const totalKillRate = totalReceived > 0 ? ((totalClosed / totalReceived) * 100).toFixed(1) : 'N/A';
+
+  // Tech Kill Rate = selected tech's closed vs all received
+  const techReactiveClosedList = hasQueueData
+    ? reactiveTicketsFiltered.filter(t => (t.status === 5 || t.status === 'Complete') && t.workedHours > 0)
+    : closedTicketsList.filter(t => t.workedHours > 0);
+  const techMACClosedList = hasQueueData
+    ? macTicketsFiltered.filter(t => (t.status === 5 || t.status === 'Complete') && t.workedHours > 0)
+    : [];
+  const techClosed = techReactiveClosedList.length + (hasQueueData ? techMACClosedList.length : (parseInt($('#sde-mac-closed').value) || 0));
+  const techKillRate = totalReceived > 0 ? ((techClosed / totalReceived) * 100).toFixed(1) : 'N/A';
+
+  // Use tech kill rate as the primary display when techs are selected, otherwise total
+  const hasTechFilter = selectedTechnicians.length > 0;
+  const killRate = hasTechFilter ? techKillRate : totalKillRate;
 
   const sdeCount = selectedTechnicians.length > 0 ? selectedTechnicians.length : headcount;
   const avgClosedPerDayPerSDE = (reactiveClosed > 0 && businessDays > 0 && sdeCount > 0)
@@ -1080,7 +1093,14 @@ function renderSDEMetrics() {
     'Non-Billable MAC Closed': macClosedList,
     'Total Received': [...reactiveReceivedList, ...macReceivedList],
     'Total Closed': [...reactiveClosedList, ...macClosedList],
-    'Kill Rate': { received: totalReceived, closed: totalClosed, rate: killRate, tickets: [...reactiveClosedList, ...macClosedList] },
+    'Kill Rate': {
+      received: totalReceived,
+      closed: totalClosed,
+      rate: totalKillRate,
+      techClosed: hasTechFilter ? techClosed : null,
+      techRate: hasTechFilter ? techKillRate : null,
+      tickets: hasTechFilter ? [...techReactiveClosedList, ...techMACClosedList] : [...reactiveClosedList, ...macClosedList],
+    },
     'Avg Closed/Day/SDE': reactiveClosedList,
     'Avg Resolution Time': reactiveClosedWithHours,
     'Avg Response Time': reactiveClosedWithHours,
@@ -1098,7 +1118,11 @@ function renderSDEMetrics() {
     ${sdeCard('Reactive Tickets Closed', reactiveClosed, hasCompletedData ? reactiveSource : 'needs-data')}
     ${sdeCard('Non-Billable MAC Closed', macClosed, hasCompletedData ? macSource : (hasQueueData ? macSource : 'manual'))}
     ${sdeCard('Total Closed', totalClosed, 'calc')}
-    ${sdeCard('Kill Rate', killRate !== 'N/A' ? killRate + '%' : 'N/A', totalReceived > 0 ? 'calc' : 'needs-data')}
+    ${sdeCard('Kill Rate',
+      hasTechFilter
+        ? (techKillRate !== 'N/A' ? techKillRate + '% tech / ' + totalKillRate + '% total' : 'N/A')
+        : (totalKillRate !== 'N/A' ? totalKillRate + '%' : 'N/A'),
+      totalReceived > 0 ? 'calc' : 'needs-data')}
   `;
 
   // --- Render Efficiency ---
@@ -1151,17 +1175,28 @@ function openSDEDrilldown(metricLabel) {
 
   $('#drilldown-title').textContent = metricLabel;
 
-  // Special case: Kill Rate shows a calculation summary + closed tickets
+  // Special case: Kill Rate shows total + tech-filtered calculation
   if (metricLabel === 'Kill Rate' && data.rate !== undefined) {
     const tickets = data.tickets || [];
     const kpiDesc = SDE_KPI_INFO[metricLabel] || '';
+    const techSection = data.techRate !== null ? `
+        <div class="drilldown-formula drilldown-formula-tech">
+          <span class="drilldown-formula-label">Selected Tech(s):</span>
+          Tech Closed (${data.techClosed}) / Total Received (${data.received}) x 100 = <strong>${data.techRate}%</strong>
+        </div>
+        <div class="drilldown-formula drilldown-formula-remainder">
+          <span class="drilldown-formula-label">Remainder of Team:</span>
+          ${data.closed - data.techClosed} closed of ${data.received} received = <strong>${data.received > 0 ? (((data.closed - data.techClosed) / data.received) * 100).toFixed(1) : 'N/A'}%</strong>
+        </div>
+    ` : '';
     const calcHtml = `
       <div class="drilldown-calc">
         <div class="drilldown-desc">${kpiDesc}</div>
         <div class="drilldown-formula">
-          <span class="drilldown-formula-label">Formula:</span>
+          <span class="drilldown-formula-label">Total Kill Rate:</span>
           Total Closed (${data.closed}) / Total Received (${data.received}) x 100 = <strong>${data.rate}%</strong>
         </div>
+        ${techSection}
       </div>
     `;
     const tableHtml = tickets.length > 0 ? renderDrilldownTable(tickets, metricLabel) : '';
