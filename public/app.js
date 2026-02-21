@@ -979,26 +979,31 @@ function renderSDEMetrics() {
   const closedTickets = closedTicketsList.length;
   const openTicketsList = filteredTickets.filter(t => t.status !== 5 && t.status !== 'Complete');
 
-  // Split tickets by queue type
-  const reactiveTickets = filteredTickets.filter(t => isReactiveQueue(t.queueID));
-  const macTickets = filteredTickets.filter(t => isMACQueue(t.queueID));
+  // Split tickets by queue type (filtered = per-tech for closed metrics)
+  const reactiveTicketsFiltered = filteredTickets.filter(t => isReactiveQueue(t.queueID));
+  const macTicketsFiltered = filteredTickets.filter(t => isMACQueue(t.queueID));
   // Tickets not in either known queue fall into reactive by default
   const unclassifiedTickets = filteredTickets.filter(t => !isReactiveQueue(t.queueID) && !isMACQueue(t.queueID));
 
-  const hasQueueData = allQueues.length > 0 && filteredTickets.some(t => t.queueID);
+  const hasQueueData = allQueues.length > 0 && allTickets.some(t => t.queueID);
 
-  // Only count tickets with worked hours > 0 for received/closed metrics
+  // Received = ALL tickets for that queue in the time frame (not tech-filtered), with worked hours > 0
+  const allReactiveTickets = allTickets.filter(t => isReactiveQueue(t.queueID));
+  const allMACTickets = allTickets.filter(t => isMACQueue(t.queueID));
+
   const reactiveReceivedList = hasQueueData
-    ? reactiveTickets.filter(t => t.workedHours > 0)
-    : filteredTickets.filter(t => t.workedHours > 0);
-  const reactiveClosedList = hasQueueData
-    ? reactiveTickets.filter(t => (t.status === 5 || t.status === 'Complete') && t.workedHours > 0)
-    : closedTicketsList.filter(t => t.workedHours > 0);
+    ? allReactiveTickets.filter(t => t.workedHours > 0)
+    : allTickets.filter(t => t.workedHours > 0);
   const macReceivedList = hasQueueData
-    ? macTickets.filter(t => t.workedHours > 0)
+    ? allMACTickets.filter(t => t.workedHours > 0)
     : [];
+
+  // Closed = per-tech filtered, with worked hours > 0
+  const reactiveClosedList = hasQueueData
+    ? reactiveTicketsFiltered.filter(t => (t.status === 5 || t.status === 'Complete') && t.workedHours > 0)
+    : closedTicketsList.filter(t => t.workedHours > 0);
   const macClosedList = hasQueueData
-    ? macTickets.filter(t => (t.status === 5 || t.status === 'Complete') && t.workedHours > 0)
+    ? macTicketsFiltered.filter(t => (t.status === 5 || t.status === 'Complete') && t.workedHours > 0)
     : [];
 
   const hasCompletedData = closedTickets > 0;
