@@ -334,7 +334,7 @@ function getDeepAnalytics(analyzedTickets, rawTickets = []) {
   const automatableMinutes = analyzedTickets
     .filter(t => t.automationScore >= 70)
     .reduce((s, t) => s + (t.estimatedMinutes || 0), 0);
-  const avgHourlyRate = 75; // default tech hourly rate
+  const avgHourlyRate = 150; // default tech hourly rate
   const monthlySavingsHours = automatableMinutes / 60;
   const annualSavingsHours = monthlySavingsHours * 12;
 
