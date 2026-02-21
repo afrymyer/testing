@@ -34,6 +34,31 @@ const DEMO_TICKETS = [
 ];
 
 // ── Date Helpers ──
+function countBusinessDays(startDate, endDate) {
+  let count = 0;
+  const cur = new Date(startDate);
+  cur.setHours(0, 0, 0, 0);
+  const end = new Date(endDate);
+  end.setHours(0, 0, 0, 0);
+  while (cur <= end) {
+    const dow = cur.getDay();
+    if (dow !== 0 && dow !== 6) count++;
+    cur.setDate(cur.getDate() + 1);
+  }
+  return count;
+}
+
+function subtractBusinessDays(fromDate, numDays) {
+  const d = new Date(fromDate);
+  let remaining = numDays;
+  while (remaining > 0) {
+    d.setDate(d.getDate() - 1);
+    const dow = d.getDay();
+    if (dow !== 0 && dow !== 6) remaining--;
+  }
+  return d;
+}
+
 function getDateRange(preset) {
   const now = new Date();
   const to = now.toISOString().slice(0, 10);
@@ -892,6 +917,15 @@ const SDE_KPI_INFO = {
 
 function renderSDEMetrics() {
   const headcount = parseInt($('#sde-headcount').value) || 1;
+
+  // Auto-calculate business days from selected time frame
+  const { from, to } = getDateRange($('#timeframe-select').value);
+  if (from) {
+    const autoBusinessDays = countBusinessDays(new Date(from), new Date(to || new Date()));
+    if (autoBusinessDays > 0) {
+      $('#sde-business-days').value = autoBusinessDays;
+    }
+  }
   const businessDays = parseInt($('#sde-business-days').value) || 20;
   const csatScore = parseFloat($('#sde-csat-score').value) || null;
   const csatRate = parseFloat($('#sde-csat-rate').value) || null;
@@ -949,10 +983,10 @@ function renderSDEMetrics() {
   const avgOpenAtEOD = hasCompletedData ? openTickets : totalTickets;
 
   const now = new Date();
-  const fiveDaysAgo = new Date(now - 5 * 86400000);
+  const fiveBusinessDaysAgo = subtractBusinessDays(now, 5);
   const oldTicketsList = filteredTickets.filter(t => {
     if (!t.createDate) return false;
-    return new Date(t.createDate) < fiveDaysAgo;
+    return new Date(t.createDate) < fiveBusinessDaysAgo;
   });
 
   // Store ticket sets for drill-down
