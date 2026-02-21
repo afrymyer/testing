@@ -204,6 +204,9 @@ function renderAnalytics(analytics, summary) {
 
   // ROI projection
   renderROI(analytics.roiProjection);
+
+  // Quick Wins tab
+  renderQuickWins();
 }
 
 function renderCategoryBars(categoryBreakdown) {
@@ -373,21 +376,24 @@ function renderTickets(tickets) {
   ticketsContainer.innerHTML = tickets.map(t => {
     const scoreClass = t.automationScore >= 80 ? 'high' : t.automationScore >= 50 ? 'medium' : 'low';
     const scripts = (t.suggestedScripts || []).map(s =>
-      `<button class="script-btn" onclick="viewScript('${s.type}', '${s.name}')">${s.label}</button>`
+      `<button class="script-btn" onclick="event.stopPropagation(); viewScript('${s.type}', '${s.name}')">${s.label}</button>`
     ).join('');
 
     const priorityMap = { 1: 'Critical', 2: 'High', 3: 'Medium', 4: 'Low' };
     const priorityLabel = priorityMap[t.priority] || '';
     const priorityClass = priorityLabel ? `badge-priority-${priorityLabel.toLowerCase()}` : '';
 
+    const readinessClass = t.automationReadiness || 'manual';
+
     return `
-      <div class="ticket-card ${t.isQuickHitter ? 'quick-hitter' : ''}">
+      <div class="ticket-card ${t.isQuickHitter ? 'quick-hitter' : ''}" onclick="openTicketDetail('${t.ticketId}')">
         <div class="ticket-header">
           <span class="ticket-title">${escHtml(t.title)}</span>
           <span class="ticket-id">#${t.ticketNumber || t.ticketId}</span>
         </div>
         <div class="ticket-meta">
           <span class="badge badge-category">${t.categoryLabel}</span>
+          <span class="badge badge-readiness badge-readiness-${readinessClass}">${t.automationReadinessLabel || 'Manual'}</span>
           ${t.isQuickHitter ? '<span class="badge badge-quick">Quick Hitter</span>' : ''}
           ${t.estimatedMinutes ? `<span class="badge badge-time">~${t.estimatedMinutes} min</span>` : ''}
           ${priorityLabel ? `<span class="badge ${priorityClass}">${priorityLabel}</span>` : ''}
@@ -488,6 +494,10 @@ function applyFilters() {
 
   if (category === 'quick') {
     filtered = filtered.filter(t => t.isQuickHitter);
+  } else if (category === 'auto_ready') {
+    filtered = filtered.filter(t => t.automationReadiness === 'auto_ready');
+  } else if (category === 'quick_wins') {
+    filtered = filtered.filter(t => t.isQuickHitter && t.automationReadiness === 'auto_ready');
   } else if (category === 'automatable') {
     filtered = filtered.filter(t => t.automationScore >= 70);
   }
@@ -543,6 +553,199 @@ function showToast(msg) {
   setTimeout(() => toast.remove(), 2200);
 }
 
+// ── Ticket Detail Modal ──
+function openTicketDetail(ticketId) {
+  const t = allTickets.find(tk => String(tk.ticketId) === String(ticketId));
+  if (!t) return;
+
+  const priorityMap = { 1: 'Critical', 2: 'High', 3: 'Medium', 4: 'Low' };
+  const priorityLabel = priorityMap[t.priority] || 'Unknown';
+  const priorityClass = priorityLabel ? `badge-priority-${priorityLabel.toLowerCase()}` : '';
+  const scoreClass = t.automationScore >= 80 ? 'high' : t.automationScore >= 50 ? 'medium' : 'low';
+  const readinessClass = t.automationReadiness || 'manual';
+
+  const scripts = (t.suggestedScripts || []).map(s =>
+    `<button class="script-btn" onclick="event.stopPropagation(); viewScript('${s.type}', '${s.name}')">${s.label}</button>`
+  ).join('');
+
+  const createdDate = t.createDate ? new Date(t.createDate).toLocaleDateString('en-US', {
+    weekday: 'short', year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+  }) : 'N/A';
+
+  $('#detail-modal-title').textContent = `#${t.ticketNumber || t.ticketId}`;
+  $('#detail-modal-body').innerHTML = `
+    <div class="detail-content">
+      <h3 class="detail-ticket-title">${escHtml(t.title)}</h3>
+
+      <div class="detail-badges">
+        <span class="badge badge-category">${t.categoryLabel}</span>
+        <span class="badge badge-readiness badge-readiness-${readinessClass}">${t.automationReadinessLabel || 'Manual'}</span>
+        ${t.isQuickHitter ? '<span class="badge badge-quick">Quick Hitter</span>' : ''}
+        ${t.estimatedMinutes ? `<span class="badge badge-time">~${t.estimatedMinutes} min</span>` : ''}
+        <span class="badge ${priorityClass}">${priorityLabel}</span>
+      </div>
+
+      ${t.description ? `
+        <div class="detail-section">
+          <h4>Description</h4>
+          <p class="detail-description">${escHtml(t.description)}</p>
+        </div>
+      ` : ''}
+
+      <div class="detail-grid">
+        <div class="detail-stat">
+          <div class="detail-stat-label">Created</div>
+          <div class="detail-stat-value">${createdDate}</div>
+        </div>
+        <div class="detail-stat">
+          <div class="detail-stat-label">Est. Time</div>
+          <div class="detail-stat-value">${t.estimatedMinutes ? t.estimatedMinutes + ' min' : 'Unknown'}</div>
+        </div>
+        <div class="detail-stat">
+          <div class="detail-stat-label">Match Confidence</div>
+          <div class="detail-stat-value">${t.matchConfidence}%</div>
+        </div>
+        <div class="detail-stat">
+          <div class="detail-stat-label">Quick Win Value</div>
+          <div class="detail-stat-value">${t.quickWinValue || 0}</div>
+        </div>
+      </div>
+
+      <div class="detail-section">
+        <h4>Automation Score</h4>
+        <div class="detail-score-bar">
+          <div class="score-track detail-score-track">
+            <div class="score-fill ${scoreClass}" style="width: ${t.automationScore}%"></div>
+          </div>
+          <span class="detail-score-value">${t.automationScore}%</span>
+        </div>
+      </div>
+
+      <div class="detail-section detail-automation-path">
+        <h4>Automation Readiness: <span class="badge badge-readiness badge-readiness-${readinessClass}">${t.automationReadinessLabel || 'Manual'}</span></h4>
+        <p>${t.automationPath || 'No automation path determined.'}</p>
+      </div>
+
+      ${t.suggestedScripts && t.suggestedScripts.length ? `
+        <div class="detail-section">
+          <h4>Available Scripts ${t.scriptMatchType === 'symptom' ? '<span class="match-type-label match-symptom">Matched by symptoms</span>' : '<span class="match-type-label match-fallback">Category fallback</span>'}</h4>
+          <div class="detail-scripts-list">
+            ${t.suggestedScripts.map(s => `
+              <div class="detail-script-card">
+                <div class="detail-script-header">
+                  <button class="script-btn" onclick="event.stopPropagation(); viewScript('${s.type}', '${s.name}')">${s.label}</button>
+                  ${s.relevance ? `<span class="script-relevance ${s.relevance >= 70 ? 'relevance-high' : s.relevance >= 40 ? 'relevance-med' : 'relevance-low'}">${s.relevance}% match</span>` : ''}
+                </div>
+                ${s.resolves ? `<p class="script-resolves">${s.resolves}</p>` : ''}
+                ${s.requires ? `<p class="script-requires">Requires: ${s.requires}</p>` : ''}
+                ${s.matchedSymptoms && s.matchedSymptoms.length ? `<p class="script-matched">Matched: ${s.matchedSymptoms.map(sym => `<code>${sym}</code>`).join(' ')}</p>` : ''}
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      ` : ''}
+
+      ${t.isQuickHitter && t.automationReadiness === 'auto_ready' ? `
+        <div class="detail-quickwin-banner">
+          <div class="quickwin-banner-icon">&#9889;</div>
+          <div class="quickwin-banner-text">
+            <strong>Quick Win Candidate</strong>
+            <p>This ${t.estimatedMinutes}-min task has automation scripts ready. Deploy the script to eliminate this ticket type and save ~${t.estimatedMinutes} min per occurrence.</p>
+          </div>
+        </div>
+      ` : ''}
+    </div>
+  `;
+  $('#detail-modal').classList.remove('hidden');
+}
+
+window.openTicketDetail = openTicketDetail;
+
+function closeDetailModal() {
+  $('#detail-modal').classList.add('hidden');
+}
+
+// ── Quick Wins Tab ──
+function renderQuickWins() {
+  const quickWins = allTickets.filter(t => t.isQuickHitter && t.automationReadiness === 'auto_ready');
+  const semiAuto = allTickets.filter(t => t.isQuickHitter && t.automationReadiness === 'semi_auto');
+  const manualQuick = allTickets.filter(t => t.isQuickHitter && (t.automationReadiness === 'manual' || t.automationReadiness === 'script_assist'));
+
+  const totalMinSaved = quickWins.reduce((s, t) => s + (t.estimatedMinutes || 0), 0);
+
+  const summaryContainer = $('#quickwins-summary');
+  summaryContainer.innerHTML = `
+    <div class="qw-stat-row">
+      <div class="qw-stat">
+        <div class="qw-stat-number qw-green">${quickWins.length}</div>
+        <div class="qw-stat-label">Auto-Ready Quick Wins</div>
+      </div>
+      <div class="qw-stat">
+        <div class="qw-stat-number qw-yellow">${semiAuto.length}</div>
+        <div class="qw-stat-label">Semi-Auto Quick Hits</div>
+      </div>
+      <div class="qw-stat">
+        <div class="qw-stat-number qw-dim">${manualQuick.length}</div>
+        <div class="qw-stat-label">Manual Quick Hits</div>
+      </div>
+      <div class="qw-stat">
+        <div class="qw-stat-number qw-green">${totalMinSaved} min</div>
+        <div class="qw-stat-label">Automatable Right Now</div>
+      </div>
+    </div>
+  `;
+
+  // Group quick wins by category
+  const listContainer = $('#quickwins-list');
+  if (quickWins.length === 0) {
+    listContainer.innerHTML = '<div class="empty-state"><p>No auto-ready quick wins found in this batch. Try loading more tickets.</p></div>';
+    return;
+  }
+
+  const byCategory = {};
+  for (const t of quickWins) {
+    if (!byCategory[t.categoryLabel]) {
+      byCategory[t.categoryLabel] = { tickets: [], scripts: t.suggestedScripts, avgMinutes: t.estimatedMinutes, automationScore: t.automationScore };
+    }
+    byCategory[t.categoryLabel].tickets.push(t);
+  }
+
+  const sorted = Object.entries(byCategory).sort((a, b) => b[1].tickets.length - a[1].tickets.length);
+
+  listContainer.innerHTML = sorted.map(([category, data]) => {
+    const totalMin = data.tickets.length * data.avgMinutes;
+    const scriptBtns = (data.scripts || []).map(s =>
+      `<button class="script-btn" onclick="event.stopPropagation(); viewScript('${s.type}', '${s.name}')">${s.label}</button>`
+    ).join('');
+
+    const ticketRows = data.tickets.map(t => `
+      <div class="qw-ticket-row" onclick="openTicketDetail('${t.ticketId}')">
+        <span class="qw-ticket-title">${escHtml(t.title)}</span>
+        <span class="qw-ticket-id">#${t.ticketNumber || t.ticketId}</span>
+        <span class="badge badge-time">~${t.estimatedMinutes} min</span>
+      </div>
+    `).join('');
+
+    return `
+      <div class="qw-category-group">
+        <div class="qw-category-header">
+          <div class="qw-category-info">
+            <span class="qw-category-name">${category}</span>
+            <span class="qw-category-count">${data.tickets.length} ticket${data.tickets.length > 1 ? 's' : ''}</span>
+            <span class="badge badge-readiness badge-readiness-auto_ready">Auto-Ready</span>
+          </div>
+          <div class="qw-category-stats">
+            <span class="qw-save-total">${totalMin} min saveable</span>
+            <span class="qw-auto-score">Auto: ${data.automationScore}%</span>
+          </div>
+        </div>
+        <div class="qw-category-scripts">${scriptBtns}</div>
+        <div class="qw-tickets">${ticketRows}</div>
+      </div>
+    `;
+  }).join('');
+}
+
 // ── Escape HTML ──
 function escHtml(str) {
   const el = document.createElement('span');
@@ -558,6 +761,7 @@ $('#modal-close').addEventListener('click', closeScriptModal);
 $('#btn-copy-script').addEventListener('click', copyScript);
 $('#btn-download-script').addEventListener('click', downloadScript);
 $('#library-close').addEventListener('click', () => $('#library-modal').classList.add('hidden'));
+$('#detail-close').addEventListener('click', closeDetailModal);
 $('#filter-category').addEventListener('change', applyFilters);
 $('#sort-by').addEventListener('change', applyFilters);
 
@@ -567,6 +771,9 @@ $('#script-modal').addEventListener('click', (e) => {
 });
 $('#library-modal').addEventListener('click', (e) => {
   if (e.target === $('#library-modal')) $('#library-modal').classList.add('hidden');
+});
+$('#detail-modal').addEventListener('click', (e) => {
+  if (e.target === $('#detail-modal')) closeDetailModal();
 });
 
 // Setup tabs & timeframe toggle
