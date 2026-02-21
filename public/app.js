@@ -887,7 +887,7 @@ const SDE_KPI_INFO = {
   'Tickets > 5 Days Old': 'Average number of tickets over 5 days old in the reactive services queue for the month. Target: 10 tickets or fewer. Helps identify stagnating tickets and SDE resource, performance, and technical skillset challenges. Also helps identify if escalation processes are being used effectively by team members.',
   'Agreement Utilization': 'Billable hours logged by SDEs (against agreements or MACs) compared to dedicated team hours. Auto-calculated based on SDE headcount assuming a 40-hour work week. Target: 90% or higher billable utilization. Remaining time is typically utilized by internal meetings, PTO, and training.',
   'CSAT Score Average': 'Average CSAT score for all closed tickets that received a CSAT response for the month. Target: Highest possible — aim for an "A" rating. An "A" rating ensures clients are happy with Service Desk performance and is critical to client success and managed service agreement longevity. Manual input.',
-  'CSAT Response Rate': 'Percentage of tickets with CSAT responses. Manual input.',
+  'CSAT Response Rate': 'Percentage of closed tickets that received a CSAT response for the month. Calculated as tickets with CSAT scores divided by total tickets closed. Target: Highest possible. Receiving client feedback is critical to client success and agreement longevity. Manual input.',
 };
 
 function renderSDEMetrics() {
