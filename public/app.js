@@ -881,7 +881,7 @@ const SDE_KPI_INFO = {
   'Avg Closed/Day/SDE': 'Average tickets closed per business day per SDE. Reactive Closed / Business Days / Headcount.',
   'Avg Escalation Closed/Day': 'Number of escalation tickets closed during the month, divided by business days. Target: 4 or higher per day. Identifies escalation engineer efficiency and ensures escalated issues are resolved without stagnation. Escalation tickets are identified by the Autotask UDF "Escalate" = Yes.',
   'Avg Resolution Time': 'Average resolution time for all reactive tickets closed during the month. Resolution time = total time worked from first touch (status changed to In Progress) through completion (status changed to Complete). Target: 30 minutes or less. Critical to client success and retention.',
-  'Avg Response Time': 'Average time from ticket creation to first response. Requires Autotask SLA data.',
+  'Avg Response Time': 'Average response time for closed reactive tickets during the month. Measured from when ticket is entered in queue (opened and assigned to SDE) until first touch by SDE (status changed to In Progress). Target: 30 minutes or less. Critical to client success and retention.',
   'Total Time Entered': 'Total time logged against tickets in the period. Uses actual worked hours from time entries.',
   'Open Tickets at EOD': 'Number of tickets still open (not completed) at end of period.',
   'Tickets > 5 Days Old': 'Tickets created more than 5 days ago that are still in the dataset.',
