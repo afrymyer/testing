@@ -991,7 +991,12 @@ function renderSDEMetrics() {
   const totalReceived = reactiveReceived + macReceived;
   const totalClosed = reactiveClosed + macClosed;
 
-  const killRate = totalReceived > 0 ? ((totalClosed / totalReceived) * 100).toFixed(1) : 'N/A';
+  // Kill Rate: completed tickets with worked hours > 0 across both queues
+  const killRateReceivedList = [...reactiveReceivedList, ...macReceivedList].filter(t => t.workedHours > 0);
+  const killRateClosedList = [...reactiveClosedList, ...macClosedList].filter(t => t.workedHours > 0);
+  const killRateReceived = killRateReceivedList.length;
+  const killRateClosed = killRateClosedList.length;
+  const killRate = killRateReceived > 0 ? ((killRateClosed / killRateReceived) * 100).toFixed(1) : 'N/A';
 
   const sdeCount = selectedTechnicians.length > 0 ? selectedTechnicians.length : headcount;
   const avgClosedPerDayPerSDE = (reactiveClosed > 0 && businessDays > 0 && sdeCount > 0)
@@ -1055,7 +1060,7 @@ function renderSDEMetrics() {
     'Non-Billable MAC Closed': macClosedList,
     'Total Received': [...reactiveReceivedList, ...macReceivedList],
     'Total Closed': [...reactiveClosedList, ...macClosedList],
-    'Kill Rate': { received: totalReceived, closed: totalClosed, rate: killRate, tickets: [...reactiveClosedList, ...macClosedList] },
+    'Kill Rate': { received: killRateReceived, closed: killRateClosed, rate: killRate, tickets: killRateClosedList },
     'Avg Closed/Day/SDE': reactiveClosedList,
     'Avg Resolution Time': reactiveClosedWithHours,
     'Avg Response Time': reactiveClosedWithHours,
