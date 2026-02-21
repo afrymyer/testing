@@ -119,12 +119,32 @@ async function init() {
 
 // ── Load Queues into Multi-Select ──
 let selectedQueues = [];
+let allQueues = [];
+
+function getQueueName(queueID) {
+  if (!queueID) return 'Unknown';
+  const q = allQueues.find(q => String(q.value) === String(queueID));
+  return q ? q.label : `Queue ${queueID}`;
+}
+
+function isMACQueue(queueID) {
+  if (!queueID) return false;
+  const name = getQueueName(queueID).toLowerCase();
+  return name.includes('m/a/c') || name.includes('mac') || name.includes('move') || name.includes('add') || name.includes('change');
+}
+
+function isReactiveQueue(queueID) {
+  if (!queueID) return false;
+  const name = getQueueName(queueID).toLowerCase();
+  return name.includes('reactive');
+}
 
 async function loadQueues() {
   try {
     const res = await fetch('/api/queues');
     if (!res.ok) return;
     const queues = await res.json();
+    allQueues = queues;
     const container = $('#queue-options');
 
     for (const q of queues) {
@@ -945,9 +965,28 @@ function renderSDEMetrics() {
   const closedTickets = closedTicketsList.length;
   const openTicketsList = filteredTickets.filter(t => t.status !== 5 && t.status !== 'Complete');
 
+  // Split tickets by queue type
+  const reactiveTickets = filteredTickets.filter(t => isReactiveQueue(t.queueID));
+  const macTickets = filteredTickets.filter(t => isMACQueue(t.queueID));
+  // Tickets not in either known queue fall into reactive by default
+  const unclassifiedTickets = filteredTickets.filter(t => !isReactiveQueue(t.queueID) && !isMACQueue(t.queueID));
+
+  const hasQueueData = allQueues.length > 0 && filteredTickets.some(t => t.queueID);
+
+  const reactiveReceivedList = hasQueueData ? reactiveTickets : filteredTickets;
+  const reactiveClosedList = hasQueueData
+    ? reactiveTickets.filter(t => t.status === 5 || t.status === 'Complete')
+    : closedTicketsList;
+  const macReceivedList = hasQueueData ? macTickets : [];
+  const macClosedList = hasQueueData
+    ? macTickets.filter(t => t.status === 5 || t.status === 'Complete')
+    : [];
+
   const hasCompletedData = closedTickets > 0;
-  const reactiveReceived = totalTickets;
-  const reactiveClosed = closedTickets;
+  const reactiveReceived = reactiveReceivedList.length;
+  const reactiveClosed = reactiveClosedList.length;
+  const macReceived = hasQueueData ? macReceivedList.length : (parseInt($('#sde-mac-received').value) || 0);
+  const macClosed = hasQueueData ? macClosedList.length : (parseInt($('#sde-mac-closed').value) || 0);
 
   const totalReceived = reactiveReceived + macReceived;
   const totalClosed = reactiveClosed + macClosed;
@@ -963,21 +1002,31 @@ function renderSDEMetrics() {
     ? (escalationClosed / businessDays).toFixed(1)
     : 'N/A';
 
+  // Time metrics - use all tickets with worked hours (both queues)
   const ticketsWithWorkedHours = filteredTickets.filter(t => t.workedHours > 0);
   const ticketsWithTime = filteredTickets.filter(t => t.estimatedMinutes > 0);
   const hasRealTimeData = ticketsWithWorkedHours.length > 0;
 
-  const avgResolutionTime = hasRealTimeData
-    ? Math.round((ticketsWithWorkedHours.reduce((s, t) => s + t.workedHours, 0) / ticketsWithWorkedHours.length) * 60)
+  // Avg Resolution Time - reactive closed tickets with worked hours > 0
+  const reactiveClosedWithHours = reactiveClosedList.filter(t => t.workedHours > 0);
+  const avgResolutionTime = reactiveClosedWithHours.length > 0
+    ? Math.round((reactiveClosedWithHours.reduce((s, t) => s + t.workedHours, 0) / reactiveClosedWithHours.length) * 60)
     : ticketsWithTime.length > 0
       ? Math.round(ticketsWithTime.reduce((s, t) => s + t.estimatedMinutes, 0) / ticketsWithTime.length)
       : 'N/A';
 
+  // Avg Response Time - reactive closed tickets with worked hours > 0
+  // (placeholder until Autotask SLA data is available)
+  const avgResponseTime = 'N/A';
+  const avgResponseSource = 'needs-data';
+
+  // Total Time Entered - all tickets regardless of queue
   const totalTimeEntered = hasRealTimeData
     ? Math.round(ticketsWithWorkedHours.reduce((s, t) => s + t.workedHours, 0) * 60)
     : ticketsWithTime.reduce((s, t) => s + t.estimatedMinutes, 0);
 
   const timeSource = hasRealTimeData ? 'auto' : (ticketsWithTime.length > 0 ? 'est' : 'needs-data');
+  const resTimeSource = reactiveClosedWithHours.length > 0 ? 'auto' : (ticketsWithTime.length > 0 ? 'est' : 'needs-data');
 
   const openTickets = totalTickets - closedTickets;
   const avgOpenAtEOD = hasCompletedData ? openTickets : totalTickets;
@@ -989,16 +1038,28 @@ function renderSDEMetrics() {
     return new Date(t.createDate) < fiveBusinessDaysAgo;
   });
 
+  const macSource = hasQueueData ? 'auto' : 'manual';
+  const reactiveSource = hasQueueData ? 'auto' : 'auto';
+
+  // Hide manual MAC inputs when queue data auto-calculates them
+  const macReceivedGroup = document.getElementById('sde-mac-received-group');
+  const macClosedGroup = document.getElementById('sde-mac-closed-group');
+  if (macReceivedGroup) macReceivedGroup.style.display = hasQueueData ? 'none' : '';
+  if (macClosedGroup) macClosedGroup.style.display = hasQueueData ? 'none' : '';
+
   // Store ticket sets for drill-down
   sdeMetricSets = {
-    'Reactive Tickets Received': filteredTickets,
-    'Reactive Tickets Closed': closedTicketsList,
-    'Total Received': filteredTickets,
-    'Total Closed': closedTicketsList,
-    'Kill Rate': { received: totalReceived, closed: totalClosed, rate: killRate, tickets: closedTicketsList },
-    'Avg Closed/Day/SDE': closedTicketsList,
-    'Avg Resolution Time': hasRealTimeData ? ticketsWithWorkedHours : ticketsWithTime,
-    'Total Time Entered': hasRealTimeData ? ticketsWithWorkedHours : ticketsWithTime,
+    'Reactive Tickets Received': reactiveReceivedList,
+    'Reactive Tickets Closed': reactiveClosedList,
+    'Non-Billable MAC Received': macReceivedList,
+    'Non-Billable MAC Closed': macClosedList,
+    'Total Received': [...reactiveReceivedList, ...macReceivedList],
+    'Total Closed': [...reactiveClosedList, ...macClosedList],
+    'Kill Rate': { received: totalReceived, closed: totalClosed, rate: killRate, tickets: [...reactiveClosedList, ...macClosedList] },
+    'Avg Closed/Day/SDE': reactiveClosedList,
+    'Avg Resolution Time': reactiveClosedWithHours,
+    'Avg Response Time': reactiveClosedWithHours,
+    'Total Time Entered': ticketsWithWorkedHours.length > 0 ? ticketsWithWorkedHours : ticketsWithTime,
     'Open Tickets at EOD': openTicketsList,
     'Tickets > 5 Days Old': oldTicketsList,
   };
@@ -1006,11 +1067,11 @@ function renderSDEMetrics() {
   // --- Render Volume ---
   $('#sde-volume-grid').innerHTML = `
     ${sdeCard('SDE Headcount', selectedTechnicians.length > 0 ? selectedTechnicians.length : headcount, selectedTechnicians.length > 0 ? 'auto' : '')}
-    ${sdeCard('Reactive Tickets Received', reactiveReceived, 'auto')}
-    ${sdeCard('Non-Billable MAC Received', macReceived, 'manual')}
+    ${sdeCard('Reactive Tickets Received', reactiveReceived, reactiveSource)}
+    ${sdeCard('Non-Billable MAC Received', macReceived, macSource)}
     ${sdeCard('Total Received', totalReceived, 'calc')}
-    ${sdeCard('Reactive Tickets Closed', reactiveClosed, hasCompletedData ? 'auto' : 'needs-data')}
-    ${sdeCard('Non-Billable MAC Closed', macClosed, 'manual')}
+    ${sdeCard('Reactive Tickets Closed', reactiveClosed, hasCompletedData ? reactiveSource : 'needs-data')}
+    ${sdeCard('Non-Billable MAC Closed', macClosed, hasCompletedData ? macSource : (hasQueueData ? macSource : 'manual'))}
     ${sdeCard('Total Closed', totalClosed, 'calc')}
     ${sdeCard('Kill Rate', killRate !== 'N/A' ? killRate + '%' : 'N/A', totalReceived > 0 ? 'calc' : 'needs-data')}
   `;
@@ -1019,8 +1080,8 @@ function renderSDEMetrics() {
   $('#sde-efficiency-grid').innerHTML = `
     ${sdeCard('Avg Closed/Day/SDE', avgClosedPerDayPerSDE, hasCompletedData ? 'calc' : 'needs-data')}
     ${sdeCard('Avg Escalation Closed/Day', avgEscPerDay, escalationClosed > 0 ? 'calc' : 'manual')}
-    ${sdeCard('Avg Resolution Time', avgResolutionTime !== 'N/A' ? avgResolutionTime + ' min' : 'N/A', avgResolutionTime !== 'N/A' ? timeSource : 'needs-data')}
-    ${sdeCard('Avg Response Time', 'N/A', 'needs-data', 'Requires Autotask SLA data')}
+    ${sdeCard('Avg Resolution Time', avgResolutionTime !== 'N/A' ? avgResolutionTime + ' min' : 'N/A', avgResolutionTime !== 'N/A' ? resTimeSource : 'needs-data')}
+    ${sdeCard('Avg Response Time', avgResponseTime !== 'N/A' ? avgResponseTime + ' min' : 'N/A', avgResponseSource, 'Requires Autotask first-touch timestamp data')}
     ${sdeCard('Total Time Entered', totalTimeEntered + ' min', timeSource)}
     ${sdeCard('Open Tickets at EOD', avgOpenAtEOD, hasCompletedData ? 'auto' : 'est')}
     ${sdeCard('Tickets > 5 Days Old', oldTicketsList.length, 'auto')}
@@ -1097,13 +1158,15 @@ function openSDEDrilldown(metricLabel) {
 }
 
 function renderDrilldownTable(tickets, metricLabel) {
-  const showWorkedHours = ['Avg Resolution Time', 'Total Time Entered'].includes(metricLabel);
-  const showStatus = ['Reactive Tickets Received', 'Total Received', 'Open Tickets at EOD', 'Tickets > 5 Days Old'].includes(metricLabel);
+  const showWorkedHours = ['Avg Resolution Time', 'Avg Response Time', 'Total Time Entered'].includes(metricLabel);
+  const showStatus = ['Reactive Tickets Received', 'Non-Billable MAC Received', 'Total Received', 'Open Tickets at EOD', 'Tickets > 5 Days Old'].includes(metricLabel);
+  const showQueue = allQueues.length > 0;
 
   const headerCols = `
     <th>Ticket #</th>
     <th>Title</th>
     <th>Category</th>
+    ${showQueue ? '<th>Queue</th>' : ''}
     ${showStatus ? '<th>Status</th>' : ''}
     ${showWorkedHours ? '<th>Worked Hours</th>' : ''}
     <th>Assigned To</th>
@@ -1119,6 +1182,7 @@ function renderDrilldownTable(tickets, metricLabel) {
         <td class="drilldown-ticket-id">${t.ticketNumber || t.ticketId}</td>
         <td class="drilldown-ticket-title">${escHtml(t.title)}</td>
         <td><span class="badge badge-category">${t.categoryLabel}</span></td>
+        ${showQueue ? `<td>${escHtml(getQueueName(t.queueID))}</td>` : ''}
         ${showStatus ? `<td><span class="badge ${statusLabel === 'Closed' ? 'badge-status-closed' : 'badge-status-open'}">${statusLabel}</span></td>` : ''}
         ${showWorkedHours ? `<td>${t.workedHours > 0 ? t.workedHours.toFixed(2) + 'h' : (t.estimatedMinutes ? '~' + t.estimatedMinutes + 'm est' : 'N/A')}</td>` : ''}
         <td>${escHtml(resourceName)}</td>
