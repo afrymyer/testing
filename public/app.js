@@ -951,8 +951,6 @@ function renderSDEMetrics() {
   const csatRate = parseFloat($('#sde-csat-rate').value) || null;
   const agreementUtil = parseFloat($('#sde-agreement-util').value) || null;
   const escalationClosed = parseInt($('#sde-escalation-closed').value) || 0;
-  const macReceived = parseInt($('#sde-mac-received').value) || 0;
-  const macClosed = parseInt($('#sde-mac-closed').value) || 0;
 
   // Filter tickets by selected technicians (if any selected)
   const filteredTickets = selectedTechnicians.length > 0
