@@ -971,13 +971,18 @@ function renderSDEMetrics() {
 
   const hasQueueData = allQueues.length > 0 && filteredTickets.some(t => t.queueID);
 
-  const reactiveReceivedList = hasQueueData ? reactiveTickets : filteredTickets;
+  // Only count tickets with worked hours > 0 for received/closed metrics
+  const reactiveReceivedList = hasQueueData
+    ? reactiveTickets.filter(t => t.workedHours > 0)
+    : filteredTickets.filter(t => t.workedHours > 0);
   const reactiveClosedList = hasQueueData
-    ? reactiveTickets.filter(t => t.status === 5 || t.status === 'Complete')
-    : closedTicketsList;
-  const macReceivedList = hasQueueData ? macTickets : [];
+    ? reactiveTickets.filter(t => (t.status === 5 || t.status === 'Complete') && t.workedHours > 0)
+    : closedTicketsList.filter(t => t.workedHours > 0);
+  const macReceivedList = hasQueueData
+    ? macTickets.filter(t => t.workedHours > 0)
+    : [];
   const macClosedList = hasQueueData
-    ? macTickets.filter(t => t.status === 5 || t.status === 'Complete')
+    ? macTickets.filter(t => (t.status === 5 || t.status === 'Complete') && t.workedHours > 0)
     : [];
 
   const hasCompletedData = closedTickets > 0;
@@ -989,12 +994,8 @@ function renderSDEMetrics() {
   const totalReceived = reactiveReceived + macReceived;
   const totalClosed = reactiveClosed + macClosed;
 
-  // Kill Rate: completed tickets with worked hours > 0 across both queues
-  const killRateReceivedList = [...reactiveReceivedList, ...macReceivedList].filter(t => t.workedHours > 0);
-  const killRateClosedList = [...reactiveClosedList, ...macClosedList].filter(t => t.workedHours > 0);
-  const killRateReceived = killRateReceivedList.length;
-  const killRateClosed = killRateClosedList.length;
-  const killRate = killRateReceived > 0 ? ((killRateClosed / killRateReceived) * 100).toFixed(1) : 'N/A';
+  // Kill Rate uses the same worked-hours-filtered lists
+  const killRate = totalReceived > 0 ? ((totalClosed / totalReceived) * 100).toFixed(1) : 'N/A';
 
   const sdeCount = selectedTechnicians.length > 0 ? selectedTechnicians.length : headcount;
   const avgClosedPerDayPerSDE = (reactiveClosed > 0 && businessDays > 0 && sdeCount > 0)
@@ -1058,7 +1059,7 @@ function renderSDEMetrics() {
     'Non-Billable MAC Closed': macClosedList,
     'Total Received': [...reactiveReceivedList, ...macReceivedList],
     'Total Closed': [...reactiveClosedList, ...macClosedList],
-    'Kill Rate': { received: killRateReceived, closed: killRateClosed, rate: killRate, tickets: killRateClosedList },
+    'Kill Rate': { received: totalReceived, closed: totalClosed, rate: killRate, tickets: [...reactiveClosedList, ...macClosedList] },
     'Avg Closed/Day/SDE': reactiveClosedList,
     'Avg Resolution Time': reactiveClosedWithHours,
     'Avg Response Time': reactiveClosedWithHours,
