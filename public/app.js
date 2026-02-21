@@ -886,7 +886,7 @@ const SDE_KPI_INFO = {
   'Open Tickets at EOD': 'Number of tickets still open at end of day. Target: 25 or fewer. More than 25 or a steadily rising count indicates team capacity, operational process, or skill set issues. Starting the day with fewer tickets reduces team stress. Determining how to reduce tickets on board at day\'s end is essential.',
   'Tickets > 5 Days Old': 'Average number of tickets over 5 days old in the reactive services queue for the month. Target: 10 tickets or fewer. Helps identify stagnating tickets and SDE resource, performance, and technical skillset challenges. Also helps identify if escalation processes are being used effectively by team members.',
   'Agreement Utilization': 'Billable hours logged by SDEs (against agreements or MACs) compared to dedicated team hours. Auto-calculated based on SDE headcount assuming a 40-hour work week. Target: 90% or higher billable utilization. Remaining time is typically utilized by internal meetings, PTO, and training.',
-  'CSAT Score Average': 'Average customer satisfaction score. Manual input.',
+  'CSAT Score Average': 'Average CSAT score for all closed tickets that received a CSAT response for the month. Target: Highest possible — aim for an "A" rating. An "A" rating ensures clients are happy with Service Desk performance and is critical to client success and managed service agreement longevity. Manual input.',
   'CSAT Response Rate': 'Percentage of tickets with CSAT responses. Manual input.',
 };
 
