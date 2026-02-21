@@ -864,6 +864,32 @@ function renderQuickWins() {
 }
 
 // ── SDE Metrics ──
+
+// Store computed ticket sets for drill-down on click
+let sdeMetricSets = {};
+
+// KPI descriptions for each metric
+const SDE_KPI_INFO = {
+  'Reactive Tickets Received': 'Number of new reactive tickets received in the period, whether closed or still open. Excludes junk, duplicate, or deleted tickets. Only includes tickets with time entered. Helps identify workload variations and establish team capacity requirements.',
+  'Reactive Tickets Closed': 'Number of all reactive tickets closed for the month. Excludes tickets with no time entered against them. Helps identify workload variations and establish team capacity requirements.',
+  'Non-Billable MAC Received': 'Number of new non-billable MAC requests received in the Reactive Services Queue, whether closed or still open. Excludes junk, duplicate, or deleted tickets. Only includes tickets with time entered. Helps identify workload variations and establish team capacity requirements.',
+  'Non-Billable MAC Closed': 'Number of non-billable MAC requests closed during the period. Excludes tickets/requests closed with no time entered.',
+  'Total Received': 'Total reactive tickets and non-billable MAC requests received for the month, whether closed or still open. Excludes junk, duplicate, or trash tickets. Helps identify workload variations and establish team capacity requirements.',
+  'Total Closed': 'Number of all reactive tickets and non-billable MAC requests closed for the month. Excludes tickets/requests closed with no time entered. Helps identify workload variations and establish team capacity requirements.',
+  'Kill Rate': 'Percentage of tickets closed compared to opened during the month. Target: 100% or higher. With 70% same-day resolution target, kill rate must average 100% over time. If not achieved, tickets on board at days end will continuously increase.',
+  'SDE Headcount': 'Number of Service Desk Engineers in the period. Auto-set when technicians are selected.',
+  'Avg Closed/Day/SDE': 'Average tickets closed per business day per SDE. Reactive Closed / Business Days / Headcount.',
+  'Avg Escalation Closed/Day': 'Average escalation tickets closed per business day.',
+  'Avg Resolution Time': 'Average time to resolve tickets. Uses actual worked hours from time entries when available.',
+  'Avg Response Time': 'Average time from ticket creation to first response. Requires Autotask SLA data.',
+  'Total Time Entered': 'Total time logged against tickets in the period. Uses actual worked hours from time entries.',
+  'Open Tickets at EOD': 'Number of tickets still open (not completed) at end of period.',
+  'Tickets > 5 Days Old': 'Tickets created more than 5 days ago that are still in the dataset.',
+  'Agreement Utilization': 'Percentage of agreement hours utilized. Manual input.',
+  'CSAT Score Average': 'Average customer satisfaction score. Manual input.',
+  'CSAT Response Rate': 'Percentage of tickets with CSAT responses. Manual input.',
+};
+
 function renderSDEMetrics() {
   const headcount = parseInt($('#sde-headcount').value) || 1;
   const businessDays = parseInt($('#sde-business-days').value) || 20;
@@ -881,10 +907,10 @@ function renderSDEMetrics() {
 
   // Auto-calculated from ticket data
   const totalTickets = filteredTickets.length;
-  const closedTickets = filteredTickets.filter(t => t.status === 5 || t.status === 'Complete').length;
+  const closedTicketsList = filteredTickets.filter(t => t.status === 5 || t.status === 'Complete');
+  const closedTickets = closedTicketsList.length;
+  const openTicketsList = filteredTickets.filter(t => t.status !== 5 && t.status !== 'Complete');
 
-  // For open/closed split: if includeCompleted was checked, we have both
-  // Otherwise all loaded tickets are open
   const hasCompletedData = closedTickets > 0;
   const reactiveReceived = totalTickets;
   const reactiveClosed = closedTickets;
@@ -892,21 +918,17 @@ function renderSDEMetrics() {
   const totalReceived = reactiveReceived + macReceived;
   const totalClosed = reactiveClosed + macClosed;
 
-  // Kill rate: closed / received * 100
   const killRate = totalReceived > 0 ? ((totalClosed / totalReceived) * 100).toFixed(1) : 'N/A';
 
-  // Avg tickets closed per day per SDE
   const sdeCount = selectedTechnicians.length > 0 ? selectedTechnicians.length : headcount;
   const avgClosedPerDayPerSDE = (reactiveClosed > 0 && businessDays > 0 && sdeCount > 0)
     ? (reactiveClosed / businessDays / sdeCount).toFixed(1)
     : 'N/A';
 
-  // Avg escalation tickets closed per day
   const avgEscPerDay = (escalationClosed > 0 && businessDays > 0)
     ? (escalationClosed / businessDays).toFixed(1)
     : 'N/A';
 
-  // Use actual worked hours from time entries if available, fall back to estimated minutes
   const ticketsWithWorkedHours = filteredTickets.filter(t => t.workedHours > 0);
   const ticketsWithTime = filteredTickets.filter(t => t.estimatedMinutes > 0);
   const hasRealTimeData = ticketsWithWorkedHours.length > 0;
@@ -917,27 +939,37 @@ function renderSDEMetrics() {
       ? Math.round(ticketsWithTime.reduce((s, t) => s + t.estimatedMinutes, 0) / ticketsWithTime.length)
       : 'N/A';
 
-  // Total time entered - prefer actual worked hours
   const totalTimeEntered = hasRealTimeData
     ? Math.round(ticketsWithWorkedHours.reduce((s, t) => s + t.workedHours, 0) * 60)
     : ticketsWithTime.reduce((s, t) => s + t.estimatedMinutes, 0);
 
   const timeSource = hasRealTimeData ? 'auto' : (ticketsWithTime.length > 0 ? 'est' : 'needs-data');
 
-  // Avg open tickets in queue at EOD (use current open count / business days as proxy)
   const openTickets = totalTickets - closedTickets;
   const avgOpenAtEOD = hasCompletedData ? openTickets : totalTickets;
 
-  // Avg tickets > 5 days old
   const now = new Date();
   const fiveDaysAgo = new Date(now - 5 * 86400000);
-  const oldTickets = filteredTickets.filter(t => {
+  const oldTicketsList = filteredTickets.filter(t => {
     if (!t.createDate) return false;
     return new Date(t.createDate) < fiveDaysAgo;
-  }).length;
+  });
+
+  // Store ticket sets for drill-down
+  sdeMetricSets = {
+    'Reactive Tickets Received': filteredTickets,
+    'Reactive Tickets Closed': closedTicketsList,
+    'Total Received': filteredTickets,
+    'Total Closed': closedTicketsList,
+    'Kill Rate': { received: totalReceived, closed: totalClosed, rate: killRate, tickets: closedTicketsList },
+    'Avg Closed/Day/SDE': closedTicketsList,
+    'Avg Resolution Time': hasRealTimeData ? ticketsWithWorkedHours : ticketsWithTime,
+    'Total Time Entered': hasRealTimeData ? ticketsWithWorkedHours : ticketsWithTime,
+    'Open Tickets at EOD': openTicketsList,
+    'Tickets > 5 Days Old': oldTicketsList,
+  };
 
   // --- Render Volume ---
-  const techLabel = selectedTechnicians.length > 0 ? ` (${selectedTechnicians.length} tech${selectedTechnicians.length > 1 ? 's' : ''})` : '';
   $('#sde-volume-grid').innerHTML = `
     ${sdeCard('SDE Headcount', selectedTechnicians.length > 0 ? selectedTechnicians.length : headcount, selectedTechnicians.length > 0 ? 'auto' : '')}
     ${sdeCard('Reactive Tickets Received', reactiveReceived, 'auto')}
@@ -957,7 +989,7 @@ function renderSDEMetrics() {
     ${sdeCard('Avg Response Time', 'N/A', 'needs-data', 'Requires Autotask SLA data')}
     ${sdeCard('Total Time Entered', totalTimeEntered + ' min', timeSource)}
     ${sdeCard('Open Tickets at EOD', avgOpenAtEOD, hasCompletedData ? 'auto' : 'est')}
-    ${sdeCard('Tickets > 5 Days Old', oldTickets, 'auto')}
+    ${sdeCard('Tickets > 5 Days Old', oldTicketsList.length, 'auto')}
   `;
 
   // --- Render Quality ---
@@ -978,15 +1010,105 @@ function sdeCard(label, value, source, tooltip) {
   };
   const sourceText = sourceLabels[source] || '';
   const sourceClass = source || '';
+  const hasData = sdeMetricSets[label];
+  const clickable = hasData ? 'sde-clickable' : '';
+  const kpiDesc = SDE_KPI_INFO[label] || tooltip || sourceText;
 
   return `
-    <div class="sde-metric-card">
+    <div class="sde-metric-card ${clickable}" onclick="openSDEDrilldown('${escHtml(label)}')" title="${escHtml(kpiDesc)}">
       <div class="sde-metric-value">${value}</div>
       <div class="sde-metric-label">${label}</div>
-      ${sourceText ? `<div class="sde-metric-source sde-source-${sourceClass}" title="${tooltip || sourceText}">${sourceText}</div>` : ''}
+      ${sourceText ? `<div class="sde-metric-source sde-source-${sourceClass}">${sourceText}</div>` : ''}
+      ${hasData ? '<div class="sde-drilldown-hint">Click to view tickets</div>' : ''}
     </div>
   `;
 }
+
+// ── SDE Drill-Down Modal ──
+function openSDEDrilldown(metricLabel) {
+  const data = sdeMetricSets[metricLabel];
+  if (!data) return;
+
+  $('#drilldown-title').textContent = metricLabel;
+
+  // Special case: Kill Rate shows a calculation summary + closed tickets
+  if (metricLabel === 'Kill Rate' && data.rate !== undefined) {
+    const tickets = data.tickets || [];
+    const kpiDesc = SDE_KPI_INFO[metricLabel] || '';
+    const calcHtml = `
+      <div class="drilldown-calc">
+        <div class="drilldown-desc">${kpiDesc}</div>
+        <div class="drilldown-formula">
+          <span class="drilldown-formula-label">Formula:</span>
+          Total Closed (${data.closed}) / Total Received (${data.received}) x 100 = <strong>${data.rate}%</strong>
+        </div>
+      </div>
+    `;
+    const tableHtml = tickets.length > 0 ? renderDrilldownTable(tickets, metricLabel) : '';
+    $('#drilldown-body').innerHTML = calcHtml + tableHtml;
+    $('#drilldown-modal').classList.remove('hidden');
+    return;
+  }
+
+  // Normal case: array of tickets
+  const tickets = Array.isArray(data) ? data : [];
+  if (tickets.length === 0) return;
+
+  const kpiDesc = SDE_KPI_INFO[metricLabel] || '';
+  const descHtml = kpiDesc ? `<div class="drilldown-desc">${kpiDesc}</div>` : '';
+  const summaryHtml = `<div class="drilldown-summary">${tickets.length} ticket${tickets.length !== 1 ? 's' : ''}</div>`;
+
+  $('#drilldown-body').innerHTML = descHtml + summaryHtml + renderDrilldownTable(tickets, metricLabel);
+  $('#drilldown-modal').classList.remove('hidden');
+}
+
+function renderDrilldownTable(tickets, metricLabel) {
+  const showWorkedHours = ['Avg Resolution Time', 'Total Time Entered'].includes(metricLabel);
+  const showStatus = ['Reactive Tickets Received', 'Total Received', 'Open Tickets at EOD', 'Tickets > 5 Days Old'].includes(metricLabel);
+
+  const headerCols = `
+    <th>Ticket #</th>
+    <th>Title</th>
+    <th>Category</th>
+    ${showStatus ? '<th>Status</th>' : ''}
+    ${showWorkedHours ? '<th>Worked Hours</th>' : ''}
+    <th>Assigned To</th>
+    <th>Created</th>
+  `;
+
+  const rows = tickets.map(t => {
+    const resourceName = getResourceName(t.assignedResourceID) || 'Unassigned';
+    const statusLabel = (t.status === 5 || t.status === 'Complete') ? 'Closed' : 'Open';
+    const createdDate = t.createDate ? new Date(t.createDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'N/A';
+    return `
+      <tr class="drilldown-row" onclick="closeSDEDrilldown(); openTicketDetail('${t.ticketId}')">
+        <td class="drilldown-ticket-id">${t.ticketNumber || t.ticketId}</td>
+        <td class="drilldown-ticket-title">${escHtml(t.title)}</td>
+        <td><span class="badge badge-category">${t.categoryLabel}</span></td>
+        ${showStatus ? `<td><span class="badge ${statusLabel === 'Closed' ? 'badge-status-closed' : 'badge-status-open'}">${statusLabel}</span></td>` : ''}
+        ${showWorkedHours ? `<td>${t.workedHours > 0 ? t.workedHours.toFixed(2) + 'h' : (t.estimatedMinutes ? '~' + t.estimatedMinutes + 'm est' : 'N/A')}</td>` : ''}
+        <td>${escHtml(resourceName)}</td>
+        <td>${createdDate}</td>
+      </tr>
+    `;
+  }).join('');
+
+  return `
+    <div class="drilldown-table-wrap">
+      <table class="data-table drilldown-table">
+        <thead><tr>${headerCols}</tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function closeSDEDrilldown() {
+  $('#drilldown-modal').classList.add('hidden');
+}
+
+window.openSDEDrilldown = openSDEDrilldown;
+window.closeSDEDrilldown = closeSDEDrilldown;
 
 // ── Get Resource Name by ID ──
 function getResourceName(resourceId) {
@@ -1011,6 +1133,7 @@ $('#btn-copy-script').addEventListener('click', copyScript);
 $('#btn-download-script').addEventListener('click', downloadScript);
 $('#library-close').addEventListener('click', () => $('#library-modal').classList.add('hidden'));
 $('#detail-close').addEventListener('click', closeDetailModal);
+$('#drilldown-close').addEventListener('click', closeSDEDrilldown);
 $('#filter-category').addEventListener('change', applyFilters);
 $('#sort-by').addEventListener('change', applyFilters);
 $('#btn-calc-sde').addEventListener('click', renderSDEMetrics);
@@ -1024,6 +1147,9 @@ $('#library-modal').addEventListener('click', (e) => {
 });
 $('#detail-modal').addEventListener('click', (e) => {
   if (e.target === $('#detail-modal')) closeDetailModal();
+});
+$('#drilldown-modal').addEventListener('click', (e) => {
+  if (e.target === $('#drilldown-modal')) closeSDEDrilldown();
 });
 
 // Setup tabs, timeframe toggle, queue & technician dropdowns

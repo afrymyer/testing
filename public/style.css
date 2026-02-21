@@ -1437,6 +1437,27 @@ main {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
 }
 
+.sde-metric-card.sde-clickable {
+  cursor: pointer;
+}
+
+.sde-metric-card.sde-clickable:hover {
+  border-color: var(--primary);
+  box-shadow: 0 4px 14px rgba(79, 143, 247, 0.2);
+}
+
+.sde-drilldown-hint {
+  font-size: 0.6rem;
+  color: var(--primary);
+  opacity: 0;
+  margin-top: 0.25rem;
+  transition: opacity 0.2s;
+}
+
+.sde-metric-card.sde-clickable:hover .sde-drilldown-hint {
+  opacity: 1;
+}
+
 .sde-metric-value {
   font-size: 1.5rem;
   font-weight: 700;
@@ -1530,6 +1551,98 @@ main {
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+/* === SDE Drill-Down Modal === */
+.drilldown-desc {
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  line-height: 1.6;
+  background: var(--surface-2);
+  border-left: 3px solid var(--primary);
+  padding: 0.75rem 1rem;
+  border-radius: 0 6px 6px 0;
+  margin-bottom: 1rem;
+}
+
+.drilldown-summary {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 0.75rem;
+}
+
+.drilldown-calc {
+  margin-bottom: 1rem;
+}
+
+.drilldown-formula {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  font-size: 0.88rem;
+  color: var(--text);
+  margin-top: 0.5rem;
+}
+
+.drilldown-formula-label {
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-right: 0.5rem;
+}
+
+.drilldown-table-wrap {
+  max-height: 400px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.drilldown-table {
+  margin: 0;
+}
+
+.drilldown-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  z-index: 1;
+}
+
+.drilldown-row {
+  cursor: pointer;
+}
+
+.drilldown-row:hover td {
+  background: rgba(79, 143, 247, 0.1) !important;
+}
+
+.drilldown-ticket-id {
+  font-family: monospace;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.drilldown-ticket-title {
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.badge-status-closed {
+  background: rgba(52, 211, 153, 0.15);
+  color: var(--green);
+}
+
+.badge-status-open {
+  background: rgba(251, 191, 36, 0.15);
+  color: var(--yellow);
 }
 
 @media (max-width: 768px) {

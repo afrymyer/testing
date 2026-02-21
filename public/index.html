@@ -72,7 +72,7 @@
         <!-- Exclude Zero Hours Toggle -->
         <div class="filter-item">
           <label class="toggle-label">
-            <input type="checkbox" id="exclude-zero-hours" />
+            <input type="checkbox" id="exclude-zero-hours" checked />
             Exclude 0 Hours
           </label>
         </div>
@@ -316,6 +316,17 @@
           <button id="detail-close" class="btn-close">&times;</button>
         </div>
         <div class="modal-body" id="detail-modal-body"></div>
+      </div>
+    </div>
+
+    <!-- SDE Drill-Down Modal -->
+    <div id="drilldown-modal" class="modal hidden">
+      <div class="modal-content modal-wide">
+        <div class="modal-header">
+          <h2 id="drilldown-title">Metric Details</h2>
+          <button id="drilldown-close" class="btn-close">&times;</button>
+        </div>
+        <div class="modal-body" id="drilldown-body"></div>
       </div>
     </div>
 
