@@ -156,12 +156,116 @@ function getAutomationReadiness(pattern, scripts, confidence) {
 }
 
 /**
+ * Resolution patterns: what the tech actually did.
+ * If the resolution matches a known automatable action, score goes UP.
+ * If it matches a manual/escalation action, score goes DOWN.
+ */
+const RESOLUTION_INDICATORS = {
+  // Resolutions that prove automation is viable (boost score)
+  automatable: [
+    { keywords: ['reset password', 'password reset', 'unlocked account', 'account unlocked', 'reset credentials'], boost: 20 },
+    { keywords: ['cleared print spooler', 'restarted print spooler', 'cleared print queue', 'print spooler restart'], boost: 20 },
+    { keywords: ['cleared cache', 'cache cleared', 'cleared teams cache', 'cleared outlook cache', 'cleared browser cache'], boost: 20 },
+    { keywords: ['disk cleanup', 'cleared temp files', 'freed up space', 'cleaned disk', 'removed temp files', 'emptied recycle bin'], boost: 20 },
+    { keywords: ['flushed dns', 'dns flush', 'ipconfig /flushdns', 'renewed dhcp', 'reset winsock', 'reset network stack'], boost: 20 },
+    { keywords: ['restarted service', 'service restarted', 'started service', 'service started'], boost: 20 },
+    { keywords: ['gpupdate', 'group policy update', 'policy refreshed'], boost: 15 },
+    { keywords: ['rebooted', 'restarted computer', 'restarted workstation', 'restarted pc', 'restarted machine', 'reboot resolved'], boost: 15 },
+    { keywords: ['ran script', 'executed script', 'deployed script', 'ran powershell', 'script completed'], boost: 25 },
+    { keywords: ['repaired office', 'office repair', 'click to run repair', 'online repair'], boost: 15 },
+    { keywords: ['mapped drive', 'drive mapped', 'created drive mapping', 'mapped network drive'], boost: 15 },
+    { keywords: ['installed printer', 'added printer', 'printer installed', 'printer added'], boost: 15 },
+    { keywords: ['installed software', 'software installed', 'deployed application', 'app installed'], boost: 10 },
+    { keywords: ['set out of office', 'configured auto reply', 'enabled out of office'], boost: 20 },
+    { keywords: ['disabled account', 'account disabled', 'removed from groups', 'moved to disabled ou'], boost: 15 },
+    { keywords: ['created account', 'account created', 'new user setup', 'assigned license'], boost: 15 },
+  ],
+  // Resolutions that indicate manual/complex work (reduce score)
+  manual: [
+    { keywords: ['escalated', 'escalated to', 'referred to vendor', 'engaged vendor', 'vendor ticket'], penalty: 30 },
+    { keywords: ['hardware replacement', 'replaced hardware', 'rma', 'sent for repair', 'physical repair', 'replaced drive', 'replaced device'], penalty: 40 },
+    { keywords: ['on-site', 'onsite', 'visited desk', 'went to user', 'in-person', 'walked to', 'hands on'], penalty: 25 },
+    { keywords: ['custom script', 'custom fix', 'unique issue', 'one-off', 'edge case', 'unusual'], penalty: 20 },
+    { keywords: ['training', 'showed user', 'educated user', 'walked through', 'user training', 'end user education'], penalty: 15 },
+    { keywords: ['configuration change', 'registry edit', 'manual config', 'custom configuration', 'complex setup'], penalty: 15 },
+    { keywords: ['data recovery', 'restored from backup', 'backup restore', 'file recovery'], penalty: 20 },
+    { keywords: ['reimaged', 'rebuilt machine', 'fresh install', 'os reinstall', 'wiped and reinstalled'], penalty: 35 },
+    { keywords: ['troubleshot extensively', 'multiple attempts', 'root cause analysis', 'deep dive', 'investigated'], penalty: 10 },
+    { keywords: ['coordinated with', 'worked with client', 'client meeting', 'project work'], penalty: 20 },
+  ],
+};
+
+/**
+ * Score the resolution text to adjust the base automation score.
+ * Returns { adjustment, reasons } where adjustment is positive (automatable)
+ * or negative (manual) and reasons explains what was detected.
+ */
+function scoreResolution(resolutionText) {
+  if (!resolutionText) return { adjustment: 0, reasons: [] };
+
+  const text = resolutionText.toLowerCase();
+  let adjustment = 0;
+  const reasons = [];
+
+  for (const indicator of RESOLUTION_INDICATORS.automatable) {
+    for (const kw of indicator.keywords) {
+      if (text.includes(kw)) {
+        adjustment += indicator.boost;
+        reasons.push(`Resolution indicates automatable action: "${kw}"`);
+        break; // only count each indicator group once
+      }
+    }
+  }
+
+  for (const indicator of RESOLUTION_INDICATORS.manual) {
+    for (const kw of indicator.keywords) {
+      if (text.includes(kw)) {
+        adjustment -= indicator.penalty;
+        reasons.push(`Resolution indicates manual work: "${kw}"`);
+        break;
+      }
+    }
+  }
+
+  return { adjustment, reasons };
+}
+
+/**
+ * Score the client description for specificity — more detail about a
+ * known problem pattern means higher confidence the category is right.
+ * Returns a confidence bonus (0-20).
+ */
+function scoreDescription(descriptionText, pattern) {
+  if (!descriptionText || !pattern) return 0;
+
+  const text = descriptionText.toLowerCase();
+  let bonus = 0;
+
+  // Count how many distinct keywords from the matched pattern appear in description alone
+  let descHits = 0;
+  for (const kw of pattern.keywords) {
+    if (text.includes(kw)) descHits++;
+  }
+
+  // If the description itself (not just title) matches multiple keywords, confidence is higher
+  if (descHits >= 3) bonus += 15;
+  else if (descHits >= 2) bonus += 10;
+  else if (descHits >= 1) bonus += 5;
+
+  // Check if description has actionable detail (longer descriptions with relevant context)
+  if (text.length > 100 && descHits > 0) bonus += 5;
+
+  return Math.min(bonus, 20);
+}
+
+/**
  * Analyze a single ticket and return categorization + scoring.
  */
 function analyzeTicket(ticket) {
   const title = (ticket.title || '').toLowerCase();
   const description = (ticket.description || '').toLowerCase();
-  const combined = `${title} ${description}`;
+  const resolution = (ticket.resolution || '').toLowerCase();
+  const combined = `${title} ${description} ${resolution}`;
 
   let bestMatch = null;
   let bestScore = 0;
@@ -179,18 +283,25 @@ function analyzeTicket(ticket) {
     }
   }
 
-  // Resolution-focused script matching: always try symptom-based first
-  const symptomScripts = getMatchedScripts(ticket.title, ticket.description);
+  // Resolution-focused script matching: scan title, description, AND resolution
+  const symptomScripts = getMatchedScripts(ticket.title, ticket.description, ticket.resolution);
+
+  // Score the resolution text for automation indicators
+  const resolutionScore = scoreResolution(ticket.resolution);
 
   // No category match at all
   if (!bestMatch || bestScore === 0) {
     const hasScriptMatch = symptomScripts.length > 0 && symptomScripts[0].relevance >= 25;
+    // Even with no category, resolution data can tell us about automation potential
+    const baseScore = hasScriptMatch ? Math.min(symptomScripts[0].relevance, 50) : 0;
+    const adjustedScore = Math.max(0, Math.min(100, baseScore + resolutionScore.adjustment));
 
     return {
       ticketId: ticket.id,
       ticketNumber: ticket.ticketNumber,
       title: ticket.title,
       description: ticket.description || '',
+      resolution: ticket.resolution || '',
       status: ticket.status,
       priority: ticket.priority,
       queueID: ticket.queueID || null,
@@ -200,7 +311,7 @@ function analyzeTicket(ticket) {
       category: 'uncategorized',
       categoryLabel: 'Needs Review',
       estimatedMinutes: hasScriptMatch ? symptomScripts[0].manualMinutes : null,
-      automationScore: hasScriptMatch ? Math.min(symptomScripts[0].relevance, 50) : 0,
+      automationScore: adjustedScore,
       isQuickHitter: false,
       matchConfidence: 0,
       suggestedScripts: hasScriptMatch ? symptomScripts : [],
@@ -210,6 +321,7 @@ function analyzeTicket(ticket) {
       automationPath: hasScriptMatch
         ? `No strong category match, but symptom analysis found a potential script: ${symptomScripts[0].label}. Review ticket details before running.`
         : 'This ticket does not match any known automation patterns. Manual review required to determine resolution path.',
+      resolutionAnalysis: resolutionScore.reasons,
       quickWinValue: 0,
     };
   }
@@ -221,11 +333,15 @@ function analyzeTicket(ticket) {
   if (bestScore === 1 && confidence < 15) {
     const hasScriptMatch = symptomScripts.length > 0 && symptomScripts[0].relevance >= 25;
 
+    const baseScore = hasScriptMatch ? Math.min(symptomScripts[0].relevance, 40) : 0;
+    const adjustedScore = Math.max(0, Math.min(100, baseScore + resolutionScore.adjustment));
+
     return {
       ticketId: ticket.id,
       ticketNumber: ticket.ticketNumber,
       title: ticket.title,
       description: ticket.description || '',
+      resolution: ticket.resolution || '',
       status: ticket.status,
       priority: ticket.priority,
       queueID: ticket.queueID || null,
@@ -235,7 +351,7 @@ function analyzeTicket(ticket) {
       category: 'low_confidence',
       categoryLabel: 'Needs Review',
       estimatedMinutes: hasScriptMatch ? symptomScripts[0].manualMinutes : null,
-      automationScore: hasScriptMatch ? Math.min(symptomScripts[0].relevance, 40) : 0,
+      automationScore: adjustedScore,
       isQuickHitter: false,
       matchConfidence: confidence,
       suggestedScripts: hasScriptMatch ? symptomScripts : [],
@@ -245,6 +361,7 @@ function analyzeTicket(ticket) {
       automationPath: hasScriptMatch
         ? `Weak category match (${bestMatch.label} at ${confidence}% confidence). Symptom analysis suggests ${symptomScripts[0].label} may help. Review before running.`
         : `Weak match to "${bestMatch.label}" (${confidence}% confidence). Not enough signal to recommend automation. Manual review needed.`,
+      resolutionAnalysis: resolutionScore.reasons,
       quickWinValue: 0,
     };
   }
@@ -256,14 +373,26 @@ function analyzeTicket(ticket) {
   // This prevents force-fitting scripts to tickets they can't actually resolve.
   const finalScripts = symptomScripts.length > 0 ? symptomScripts : [];
 
-  // Automation readiness tagging
-  const readiness = getAutomationReadiness(bestMatch, finalScripts, confidence);
+  // Adjust automation score based on resolution + description analysis
+  const descriptionBonus = scoreDescription(ticket.description, bestMatch);
+  const adjustedConfidence = Math.min(100, confidence + descriptionBonus);
+  const adjustedAutoScore = Math.max(0, Math.min(100,
+    bestMatch.automationScore + resolutionScore.adjustment
+  ));
+
+  // Automation readiness tagging (use adjusted score context)
+  const readiness = getAutomationReadiness(
+    { ...bestMatch, automationScore: adjustedAutoScore },
+    finalScripts,
+    adjustedConfidence
+  );
 
   return {
     ticketId: ticket.id,
     ticketNumber: ticket.ticketNumber,
     title: ticket.title,
     description: ticket.description || '',
+    resolution: ticket.resolution || '',
     status: ticket.status,
     priority: ticket.priority,
     queueID: ticket.queueID || null,
@@ -273,15 +402,16 @@ function analyzeTicket(ticket) {
     category: bestMatch.category,
     categoryLabel: bestMatch.label,
     estimatedMinutes: bestMatch.avgMinutes,
-    automationScore: bestMatch.automationScore,
+    automationScore: adjustedAutoScore,
     isQuickHitter,
-    matchConfidence: confidence,
+    matchConfidence: adjustedConfidence,
     suggestedScripts: finalScripts,
     scriptMatchType: finalScripts.length > 0 ? 'symptom' : 'none',
     automationReadiness: readiness.level,
     automationReadinessLabel: readiness.label,
     automationPath: readiness.path,
-    quickWinValue: isQuickHitter ? Math.round((bestMatch.automationScore * (20 - bestMatch.avgMinutes + 1) * confidence) / 100) : 0,
+    resolutionAnalysis: resolutionScore.reasons,
+    quickWinValue: isQuickHitter ? Math.round((adjustedAutoScore * (20 - bestMatch.avgMinutes + 1) * adjustedConfidence) / 100) : 0,
   };
 }
 
@@ -483,8 +613,8 @@ const RESOLUTION_SCRIPTS = [
  * not just the category. Returns only scripts that can actually
  * resolve the described problem, with a relevance score.
  */
-function getMatchedScripts(title, description) {
-  const combined = `${(title || '').toLowerCase()} ${(description || '').toLowerCase()}`;
+function getMatchedScripts(title, description, resolution) {
+  const combined = `${(title || '').toLowerCase()} ${(description || '').toLowerCase()} ${(resolution || '').toLowerCase()}`;
   const matched = [];
 
   for (const script of RESOLUTION_SCRIPTS) {

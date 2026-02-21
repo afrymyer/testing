@@ -788,6 +788,22 @@ function openTicketDetail(ticketId) {
         <p>${t.automationPath || 'No automation path determined.'}</p>
       </div>
 
+      ${t.resolution ? `
+        <div class="detail-section">
+          <h4>Resolution (How It Was Solved)</h4>
+          <p class="detail-resolution-text">${t.resolution}</p>
+        </div>
+      ` : ''}
+
+      ${t.resolutionAnalysis && t.resolutionAnalysis.length ? `
+        <div class="detail-section">
+          <h4>Score Adjustments from Resolution</h4>
+          <ul class="resolution-analysis-list">
+            ${t.resolutionAnalysis.map(r => `<li>${r}</li>`).join('')}
+          </ul>
+        </div>
+      ` : ''}
+
       ${t.suggestedScripts && t.suggestedScripts.length ? `
         <div class="detail-section">
           <h4>Available Scripts ${t.scriptMatchType === 'symptom' ? '<span class="match-type-label match-symptom">Matched by symptoms</span>' : '<span class="match-type-label match-fallback">Category fallback</span>'}</h4>
