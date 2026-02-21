@@ -59,7 +59,7 @@ const CATEGORY_PATTERNS = [
   {
     category: 'service_restart',
     label: 'Service Restart',
-    keywords: ['service', 'restart service', 'service stopped', 'service not running', 'windows service', 'hung', 'not responding'],
+    keywords: ['restart service', 'service stopped', 'service not running', 'windows service', 'service failed', 'service hung', 'service crashed', 'agent stopped', 'agent service'],
     avgMinutes: 5,
     automationScore: 95,
   },
@@ -101,7 +101,7 @@ const CATEGORY_PATTERNS = [
   {
     category: 'reboot',
     label: 'Reboot / Restart',
-    keywords: ['reboot', 'restart', 'restart computer', 'slow computer', 'running slow', 'performance'],
+    keywords: ['reboot', 'restart computer', 'needs reboot', 'slow computer', 'running slow', 'not been rebooted', 'needs restart', 'uptime'],
     avgMinutes: 5,
     automationScore: 95,
   },
@@ -179,10 +179,12 @@ function analyzeTicket(ticket) {
     }
   }
 
-  // Default for unmatched tickets - still try symptom-based script matching
+  // Resolution-focused script matching: always try symptom-based first
+  const symptomScripts = getMatchedScripts(ticket.title, ticket.description);
+
+  // No category match at all
   if (!bestMatch || bestScore === 0) {
-    const uncatScripts = getMatchedScripts(ticket.title, ticket.description);
-    const hasScriptMatch = uncatScripts.length > 0;
+    const hasScriptMatch = symptomScripts.length > 0 && symptomScripts[0].relevance >= 25;
 
     return {
       ticketId: ticket.id,
@@ -193,29 +195,60 @@ function analyzeTicket(ticket) {
       priority: ticket.priority,
       createDate: ticket.createDate || null,
       category: 'uncategorized',
-      categoryLabel: 'Uncategorized',
-      estimatedMinutes: hasScriptMatch ? uncatScripts[0].manualMinutes : null,
-      automationScore: hasScriptMatch ? Math.min(uncatScripts[0].relevance, 60) : 0,
+      categoryLabel: 'Needs Review',
+      estimatedMinutes: hasScriptMatch ? symptomScripts[0].manualMinutes : null,
+      automationScore: hasScriptMatch ? Math.min(symptomScripts[0].relevance, 50) : 0,
       isQuickHitter: false,
       matchConfidence: 0,
-      suggestedScripts: uncatScripts,
+      suggestedScripts: hasScriptMatch ? symptomScripts : [],
       scriptMatchType: hasScriptMatch ? 'symptom' : 'none',
-      automationReadiness: hasScriptMatch ? 'script_assist' : 'manual',
-      automationReadinessLabel: hasScriptMatch ? 'Script-Assisted' : 'Manual',
+      automationReadiness: hasScriptMatch ? 'script_assist' : 'needs_review',
+      automationReadinessLabel: hasScriptMatch ? 'Script-Assisted' : 'Needs Review',
       automationPath: hasScriptMatch
-        ? `No category match, but symptom-based analysis found a potential script: ${uncatScripts[0].label}. Review ticket details to confirm applicability.`
-        : 'Ticket could not be categorized. Review manually to determine if automation is possible.',
+        ? `No strong category match, but symptom analysis found a potential script: ${symptomScripts[0].label}. Review ticket details before running.`
+        : 'This ticket does not match any known automation patterns. Manual review required to determine resolution path.',
       quickWinValue: 0,
     };
   }
 
   const confidence = Math.min(100, Math.round((bestScore / bestMatch.keywords.length) * 100));
+
+  // CONFIDENCE FLOOR: If category match is very weak (only 1 generic keyword hit
+  // with low confidence), downgrade to "Needs Review" instead of force-categorizing
+  if (bestScore === 1 && confidence < 15) {
+    const hasScriptMatch = symptomScripts.length > 0 && symptomScripts[0].relevance >= 25;
+
+    return {
+      ticketId: ticket.id,
+      ticketNumber: ticket.ticketNumber,
+      title: ticket.title,
+      description: ticket.description || '',
+      status: ticket.status,
+      priority: ticket.priority,
+      createDate: ticket.createDate || null,
+      category: 'low_confidence',
+      categoryLabel: 'Needs Review',
+      estimatedMinutes: hasScriptMatch ? symptomScripts[0].manualMinutes : null,
+      automationScore: hasScriptMatch ? Math.min(symptomScripts[0].relevance, 40) : 0,
+      isQuickHitter: false,
+      matchConfidence: confidence,
+      suggestedScripts: hasScriptMatch ? symptomScripts : [],
+      scriptMatchType: hasScriptMatch ? 'symptom_weak' : 'none',
+      automationReadiness: hasScriptMatch ? 'script_assist' : 'needs_review',
+      automationReadinessLabel: hasScriptMatch ? 'Script-Assisted' : 'Needs Review',
+      automationPath: hasScriptMatch
+        ? `Weak category match (${bestMatch.label} at ${confidence}% confidence). Symptom analysis suggests ${symptomScripts[0].label} may help. Review before running.`
+        : `Weak match to "${bestMatch.label}" (${confidence}% confidence). Not enough signal to recommend automation. Manual review needed.`,
+      quickWinValue: 0,
+    };
+  }
+
   const isQuickHitter = bestMatch.avgMinutes >= 5 && bestMatch.avgMinutes <= 20;
 
-  // Resolution-focused script matching: match symptoms in the actual ticket text
-  const scripts = getMatchedScripts(ticket.title, ticket.description);
-  // Fall back to category-based if symptom matching found nothing
-  const finalScripts = scripts.length > 0 ? scripts : getSuggestedScripts(bestMatch.category);
+  // Only use scripts that actually match symptoms in the ticket text.
+  // NO category fallback - if symptom matching found nothing, show empty scripts.
+  // This prevents force-fitting scripts to tickets they can't actually resolve.
+  const finalScripts = symptomScripts.length > 0 ? symptomScripts : [];
 
   // Automation readiness tagging
   const readiness = getAutomationReadiness(bestMatch, finalScripts, confidence);
@@ -235,7 +268,7 @@ function analyzeTicket(ticket) {
     isQuickHitter,
     matchConfidence: confidence,
     suggestedScripts: finalScripts,
-    scriptMatchType: scripts.length > 0 ? 'symptom' : 'category_fallback',
+    scriptMatchType: finalScripts.length > 0 ? 'symptom' : 'none',
     automationReadiness: readiness.level,
     automationReadinessLabel: readiness.label,
     automationPath: readiness.path,
@@ -386,7 +419,7 @@ const RESOLUTION_SCRIPTS = [
     label: 'Restart Windows Service',
     resolves: 'Gracefully stops and restarts any Windows service with timeout handling and optional force-kill',
     requires: 'Service name, admin access',
-    symptoms: ['service stopped', 'service not running', 'restart service', 'service hung', 'service failed', 'not responding', 'backup agent', 'windows service'],
+    symptoms: ['service stopped', 'service not running', 'restart service', 'service hung', 'service failed', 'service crashed', 'backup agent stopped', 'windows service stopped', 'agent stopped'],
     manualMinutes: 5,
   },
   {

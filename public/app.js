@@ -89,35 +89,69 @@ async function init() {
   showEmptyState();
 }
 
-// ── Load Queues into Dropdown ──
+// ── Load Queues into Multi-Select ──
+let selectedQueues = [];
+
 async function loadQueues() {
   try {
     const res = await fetch('/api/queues');
     if (!res.ok) return;
     const queues = await res.json();
-    const select = $('#queue-select');
+    const container = $('#queue-options');
+
     for (const q of queues) {
       if (!q.isActive) continue;
-      const opt = document.createElement('option');
-      opt.value = q.value;
-      opt.textContent = q.label;
-      select.appendChild(opt);
+      const label = document.createElement('label');
+      label.className = 'multi-select-option';
+      label.innerHTML = `<input type="checkbox" value="${q.value}" /> ${escHtml(q.label)}`;
+      label.querySelector('input').addEventListener('change', updateQueueSelection);
+      container.appendChild(label);
     }
   } catch {
-    // Silently fail - queue dropdown just stays at "All Queues"
+    // Silently fail - queue selection stays at "All Queues"
   }
+}
+
+function updateQueueSelection() {
+  const checked = document.querySelectorAll('#queue-options input:checked');
+  selectedQueues = Array.from(checked).map(cb => cb.value);
+  const trigger = $('#queue-trigger');
+
+  if (selectedQueues.length === 0) {
+    trigger.textContent = 'All Queues';
+  } else if (selectedQueues.length <= 2) {
+    const labels = Array.from(checked).map(cb => cb.parentElement.textContent.trim());
+    trigger.textContent = labels.join(', ');
+  } else {
+    trigger.textContent = `${selectedQueues.length} queues selected`;
+  }
+}
+
+function setupQueueDropdown() {
+  const trigger = $('#queue-trigger');
+  const dropdown = $('#queue-dropdown');
+
+  trigger.addEventListener('click', () => {
+    dropdown.classList.toggle('hidden');
+  });
+
+  // Close on outside click
+  document.addEventListener('click', (e) => {
+    if (!$('#queue-select-wrap').contains(e.target)) {
+      dropdown.classList.add('hidden');
+    }
+  });
 }
 
 // ── Fetch from Autotask ──
 async function fetchTickets() {
   statusText.innerHTML = '<span class="loading-spinner"></span>Fetching tickets from Autotask...';
 
-  const queueId = $('#queue-select').value;
   const { from, to } = getDateRange($('#timeframe-select').value);
   const includeCompleted = $('#include-completed').checked;
 
   const params = new URLSearchParams();
-  if (queueId) params.set('queueId', queueId);
+  if (selectedQueues.length > 0) params.set('queueIds', selectedQueues.join(','));
   if (from) params.set('dateFrom', from);
   if (to) params.set('dateTo', to);
   if (includeCompleted) params.set('includeCompleted', 'true');
@@ -137,7 +171,7 @@ async function fetchTickets() {
     applyFilters();
 
     statusBar.className = 'status-bar connected';
-    const queueLabel = queueId ? ` in queue "${$('#queue-select').selectedOptions[0].text}"` : '';
+    const queueLabel = selectedQueues.length > 0 ? ` in ${selectedQueues.length} queue${selectedQueues.length > 1 ? 's' : ''}` : '';
     const timeLabel = from ? ` (${from} to ${to})` : '';
     statusText.textContent = `Loaded ${allTickets.length} tickets${queueLabel}${timeLabel}. ${data.summary.quickHitterCount} quick hitters found.`;
   } catch (err) {
@@ -207,6 +241,9 @@ function renderAnalytics(analytics, summary) {
 
   // Quick Wins tab
   renderQuickWins();
+
+  // SDE Metrics tab
+  renderSDEMetrics();
 }
 
 function renderCategoryBars(categoryBreakdown) {
@@ -746,6 +783,115 @@ function renderQuickWins() {
   }).join('');
 }
 
+// ── SDE Metrics ──
+function renderSDEMetrics() {
+  const headcount = parseInt($('#sde-headcount').value) || 1;
+  const businessDays = parseInt($('#sde-business-days').value) || 20;
+  const csatScore = parseFloat($('#sde-csat-score').value) || null;
+  const csatRate = parseFloat($('#sde-csat-rate').value) || null;
+  const agreementUtil = parseFloat($('#sde-agreement-util').value) || null;
+  const escalationClosed = parseInt($('#sde-escalation-closed').value) || 0;
+  const macReceived = parseInt($('#sde-mac-received').value) || 0;
+  const macClosed = parseInt($('#sde-mac-closed').value) || 0;
+
+  // Auto-calculated from ticket data
+  const totalTickets = allTickets.length;
+  const closedTickets = allTickets.filter(t => t.status === 5 || t.status === 'Complete').length;
+
+  // For open/closed split: if includeCompleted was checked, we have both
+  // Otherwise all loaded tickets are open
+  const hasCompletedData = closedTickets > 0;
+  const reactiveReceived = totalTickets;
+  const reactiveClosed = closedTickets;
+
+  const totalReceived = reactiveReceived + macReceived;
+  const totalClosed = reactiveClosed + macClosed;
+
+  // Kill rate: closed / received * 100
+  const killRate = totalReceived > 0 ? ((totalClosed / totalReceived) * 100).toFixed(1) : 'N/A';
+
+  // Avg tickets closed per day per SDE
+  const avgClosedPerDayPerSDE = (reactiveClosed > 0 && businessDays > 0 && headcount > 0)
+    ? (reactiveClosed / businessDays / headcount).toFixed(1)
+    : 'N/A';
+
+  // Avg escalation tickets closed per day
+  const avgEscPerDay = (escalationClosed > 0 && businessDays > 0)
+    ? (escalationClosed / businessDays).toFixed(1)
+    : 'N/A';
+
+  // Avg resolution time (from ticket data estimatedMinutes)
+  const ticketsWithTime = allTickets.filter(t => t.estimatedMinutes > 0);
+  const avgResolutionTime = ticketsWithTime.length > 0
+    ? Math.round(ticketsWithTime.reduce((s, t) => s + t.estimatedMinutes, 0) / ticketsWithTime.length)
+    : 'N/A';
+
+  // Total time entered on reactive + MAC (estimated)
+  const totalTimeEntered = ticketsWithTime.reduce((s, t) => s + t.estimatedMinutes, 0);
+
+  // Avg open tickets in queue at EOD (use current open count / business days as proxy)
+  const openTickets = totalTickets - closedTickets;
+  const avgOpenAtEOD = hasCompletedData ? openTickets : totalTickets;
+
+  // Avg tickets > 5 days old
+  const now = new Date();
+  const fiveDaysAgo = new Date(now - 5 * 86400000);
+  const oldTickets = allTickets.filter(t => {
+    if (!t.createDate) return false;
+    return new Date(t.createDate) < fiveDaysAgo;
+  }).length;
+
+  // --- Render Volume ---
+  $('#sde-volume-grid').innerHTML = `
+    ${sdeCard('SDE Headcount', headcount, '')}
+    ${sdeCard('Reactive Tickets Received', reactiveReceived, 'auto')}
+    ${sdeCard('Non-Billable MAC Received', macReceived, 'manual')}
+    ${sdeCard('Total Received', totalReceived, 'calc')}
+    ${sdeCard('Reactive Tickets Closed', reactiveClosed, hasCompletedData ? 'auto' : 'needs-data')}
+    ${sdeCard('Non-Billable MAC Closed', macClosed, 'manual')}
+    ${sdeCard('Total Closed', totalClosed, 'calc')}
+    ${sdeCard('Kill Rate', killRate !== 'N/A' ? killRate + '%' : 'N/A', totalReceived > 0 ? 'calc' : 'needs-data')}
+  `;
+
+  // --- Render Efficiency ---
+  $('#sde-efficiency-grid').innerHTML = `
+    ${sdeCard('Avg Closed/Day/SDE', avgClosedPerDayPerSDE, hasCompletedData ? 'calc' : 'needs-data')}
+    ${sdeCard('Avg Escalation Closed/Day', avgEscPerDay, escalationClosed > 0 ? 'calc' : 'manual')}
+    ${sdeCard('Avg Resolution Time', avgResolutionTime !== 'N/A' ? avgResolutionTime + ' min' : 'N/A', ticketsWithTime.length > 0 ? 'auto' : 'needs-data')}
+    ${sdeCard('Avg Response Time', 'N/A', 'needs-data', 'Requires Autotask SLA data')}
+    ${sdeCard('Total Time Entered', totalTimeEntered + ' min', ticketsWithTime.length > 0 ? 'auto' : 'needs-data')}
+    ${sdeCard('Open Tickets at EOD', avgOpenAtEOD, hasCompletedData ? 'auto' : 'est')}
+    ${sdeCard('Tickets > 5 Days Old', oldTickets, 'auto')}
+  `;
+
+  // --- Render Quality ---
+  $('#sde-quality-grid').innerHTML = `
+    ${sdeCard('Agreement Utilization', agreementUtil !== null ? agreementUtil + '%' : 'N/A', agreementUtil !== null ? '' : 'manual')}
+    ${sdeCard('CSAT Score Average', csatScore !== null ? csatScore.toFixed(1) : 'N/A', csatScore !== null ? '' : 'manual')}
+    ${sdeCard('CSAT Response Rate', csatRate !== null ? csatRate + '%' : 'N/A', csatRate !== null ? '' : 'manual')}
+  `;
+}
+
+function sdeCard(label, value, source, tooltip) {
+  const sourceLabels = {
+    'auto': 'From ticket data',
+    'manual': 'Manual input',
+    'calc': 'Calculated',
+    'needs-data': 'Needs completed tickets',
+    'est': 'Estimated',
+  };
+  const sourceText = sourceLabels[source] || '';
+  const sourceClass = source || '';
+
+  return `
+    <div class="sde-metric-card">
+      <div class="sde-metric-value">${value}</div>
+      <div class="sde-metric-label">${label}</div>
+      ${sourceText ? `<div class="sde-metric-source sde-source-${sourceClass}" title="${tooltip || sourceText}">${sourceText}</div>` : ''}
+    </div>
+  `;
+}
+
 // ── Escape HTML ──
 function escHtml(str) {
   const el = document.createElement('span');
@@ -764,6 +910,7 @@ $('#library-close').addEventListener('click', () => $('#library-modal').classLis
 $('#detail-close').addEventListener('click', closeDetailModal);
 $('#filter-category').addEventListener('change', applyFilters);
 $('#sort-by').addEventListener('change', applyFilters);
+$('#btn-calc-sde').addEventListener('click', renderSDEMetrics);
 
 // Close modals on backdrop click
 $('#script-modal').addEventListener('click', (e) => {
@@ -776,9 +923,10 @@ $('#detail-modal').addEventListener('click', (e) => {
   if (e.target === $('#detail-modal')) closeDetailModal();
 });
 
-// Setup tabs & timeframe toggle
+// Setup tabs, timeframe toggle, & queue dropdown
 setupTabs();
 setupTimeframeToggle();
+setupQueueDropdown();
 
 // Init on load
 init();

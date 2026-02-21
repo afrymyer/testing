@@ -27,12 +27,15 @@
       </div>
 
       <div class="controls-row controls-filters">
-        <!-- Queue Selector -->
-        <div class="filter-item">
-          <label for="queue-select">Queue:</label>
-          <select id="queue-select">
-            <option value="">All Queues</option>
-          </select>
+        <!-- Queue Selector (multi-select) -->
+        <div class="filter-item filter-item-queues">
+          <label>Queues:</label>
+          <div class="multi-select-wrap" id="queue-select-wrap">
+            <button type="button" class="multi-select-trigger" id="queue-trigger">All Queues</button>
+            <div class="multi-select-dropdown hidden" id="queue-dropdown">
+              <div id="queue-options"></div>
+            </div>
+          </div>
         </div>
 
         <!-- Time Frame Presets -->
@@ -123,6 +126,7 @@
         <button class="tab-btn" data-tab="tab-opportunities">Top Opportunities</button>
         <button class="tab-btn" data-tab="tab-roi">ROI Projection</button>
         <button class="tab-btn" data-tab="tab-quickwins">Quick Wins</button>
+        <button class="tab-btn" data-tab="tab-sde-metrics">SDE Metrics</button>
       </div>
 
       <!-- Tab: Category Breakdown -->
@@ -181,6 +185,66 @@
           <h3>ROI Projection</h3>
           <p class="panel-desc">Estimated savings if automatable tickets are fully automated</p>
           <div id="roi-content" class="roi-grid"></div>
+        </div>
+      </div>
+
+      <!-- Tab: SDE Metrics -->
+      <div id="tab-sde-metrics" class="tab-panel">
+        <div class="panel-card">
+          <h3>Service Desk Engineer (SDE) Performance Metrics</h3>
+          <p class="panel-desc">Key operational metrics. Auto-calculated values update from ticket data. Enter manual values below.</p>
+
+          <div class="sde-inputs-row">
+            <div class="sde-input-group">
+              <label for="sde-headcount">SDE Headcount</label>
+              <input type="number" id="sde-headcount" min="1" value="1" />
+            </div>
+            <div class="sde-input-group">
+              <label for="sde-business-days">Business Days in Period</label>
+              <input type="number" id="sde-business-days" min="1" value="20" />
+            </div>
+            <div class="sde-input-group">
+              <label for="sde-csat-score">CSAT Score Average</label>
+              <input type="number" id="sde-csat-score" step="0.1" min="0" max="5" placeholder="e.g. 4.5" />
+            </div>
+            <div class="sde-input-group">
+              <label for="sde-csat-rate">CSAT Response Rate %</label>
+              <input type="number" id="sde-csat-rate" step="0.1" min="0" max="100" placeholder="e.g. 35" />
+            </div>
+            <div class="sde-input-group">
+              <label for="sde-agreement-util">Agreement Utilization %</label>
+              <input type="number" id="sde-agreement-util" step="0.1" min="0" max="200" placeholder="e.g. 85" />
+            </div>
+            <div class="sde-input-group">
+              <label for="sde-escalation-closed">Escalation Tickets Closed</label>
+              <input type="number" id="sde-escalation-closed" min="0" value="0" />
+            </div>
+            <div class="sde-input-group">
+              <label for="sde-mac-received">Non-Billable MAC Received</label>
+              <input type="number" id="sde-mac-received" min="0" value="0" />
+            </div>
+            <div class="sde-input-group">
+              <label for="sde-mac-closed">Non-Billable MAC Closed</label>
+              <input type="number" id="sde-mac-closed" min="0" value="0" />
+            </div>
+          </div>
+
+          <button id="btn-calc-sde" class="btn btn-primary btn-sm" style="margin-top: 0.75rem;">Recalculate Metrics</button>
+        </div>
+
+        <div class="panel-card">
+          <h3>Ticket Volume</h3>
+          <div id="sde-volume-grid" class="sde-metrics-grid"></div>
+        </div>
+
+        <div class="panel-card">
+          <h3>Efficiency &amp; Performance</h3>
+          <div id="sde-efficiency-grid" class="sde-metrics-grid"></div>
+        </div>
+
+        <div class="panel-card">
+          <h3>Quality &amp; SLA</h3>
+          <div id="sde-quality-grid" class="sde-metrics-grid"></div>
         </div>
       </div>
 

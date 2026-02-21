@@ -47,20 +47,43 @@ app.get('/api/tickets', async (req, res) => {
       });
     }
 
-    const { queueId, maxRecords, dateFrom, dateTo, includeCompleted } = req.query;
-    const opts = {
-      queueId: queueId ? parseInt(queueId) : undefined,
+    const { queueId, queueIds, maxRecords, dateFrom, dateTo, includeCompleted } = req.query;
+
+    // Support both single queueId and multi queueIds (comma-separated)
+    const queueIdList = queueIds
+      ? queueIds.split(',').map(id => parseInt(id.trim())).filter(Boolean)
+      : queueId ? [parseInt(queueId)] : [];
+
+    const baseOpts = {
       maxRecords: maxRecords ? parseInt(maxRecords) : 500,
       dateFrom: dateFrom || undefined,
       dateTo: dateTo || undefined,
     };
 
-    let tickets = await autotaskClient.getOpenTickets(opts);
+    let tickets = [];
+    if (queueIdList.length > 0) {
+      // Fetch from each queue in parallel and merge
+      const fetches = queueIdList.map(qid =>
+        autotaskClient.getOpenTickets({ ...baseOpts, queueId: qid })
+      );
+      const results = await Promise.all(fetches);
+      tickets = results.flat();
+    } else {
+      tickets = await autotaskClient.getOpenTickets(baseOpts);
+    }
 
     // Optionally merge completed tickets for full analysis
     if (includeCompleted === 'true') {
-      const completed = await autotaskClient.getCompletedTickets(opts);
-      tickets = tickets.concat(completed);
+      if (queueIdList.length > 0) {
+        const completedFetches = queueIdList.map(qid =>
+          autotaskClient.getCompletedTickets({ ...baseOpts, queueId: qid })
+        );
+        const completedResults = await Promise.all(completedFetches);
+        tickets = tickets.concat(completedResults.flat());
+      } else {
+        const completed = await autotaskClient.getCompletedTickets(baseOpts);
+        tickets = tickets.concat(completed);
+      }
     }
 
     const analyzed = analyzeTickets(tickets);
