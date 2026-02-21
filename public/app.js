@@ -1031,9 +1031,19 @@ function renderSDEMetrics() {
   const killRate = hasTechFilter ? techKillRate : totalKillRate;
 
   const sdeCount = selectedTechnicians.length > 0 ? selectedTechnicians.length : headcount;
-  const avgClosedPerDayPerSDE = (reactiveClosed > 0 && businessDays > 0 && sdeCount > 0)
-    ? (reactiveClosed / businessDays / sdeCount).toFixed(1)
+
+  // Avg Closed/Day/SDE — uses full queue closed (not tech-filtered)
+  const avgClosedPerDayPerSDE = (reactiveClosed > 0 && businessDays > 0 && headcount > 0)
+    ? (reactiveClosed / businessDays / headcount).toFixed(1)
     : 'N/A';
+
+  // Tech Avg Closed/Day — selected tech's closed per day (only shown when techs selected)
+  const techReactiveClosed = techReactiveClosedList.length;
+  const techMACClosed = techMACClosedList.length;
+  const techTotalClosed = techReactiveClosed + (hasQueueData ? techMACClosed : (parseInt($('#sde-mac-closed').value) || 0));
+  const techAvgClosedPerDay = (hasTechFilter && techReactiveClosed > 0 && businessDays > 0)
+    ? (techReactiveClosed / businessDays / sdeCount).toFixed(1)
+    : null;
 
   const avgEscPerDay = (escalationClosed > 0 && businessDays > 0)
     ? (escalationClosed / businessDays).toFixed(1)
@@ -1137,11 +1147,11 @@ function renderSDEMetrics() {
   // Store ticket sets for drill-down
   sdeMetricSets = {
     'Reactive Tickets Received': reactiveReceivedList,
-    'Reactive Tickets Closed': reactiveClosedList,
+    'Reactive Tickets Closed': hasTechFilter ? techReactiveClosedList : reactiveClosedList,
     'Non-Billable MAC Received': macReceivedList,
-    'Non-Billable MAC Closed': macClosedList,
+    'Non-Billable MAC Closed': hasTechFilter ? techMACClosedList : macClosedList,
     'Total Received': [...reactiveReceivedList, ...macReceivedList],
-    'Total Closed': [...reactiveClosedList, ...macClosedList],
+    'Total Closed': hasTechFilter ? [...techReactiveClosedList, ...techMACClosedList] : [...reactiveClosedList, ...macClosedList],
     'Kill Rate': {
       received: totalReceived,
       closed: totalClosed,
@@ -1150,7 +1160,7 @@ function renderSDEMetrics() {
       techRate: hasTechFilter ? techKillRate : null,
       tickets: hasTechFilter ? [...techReactiveClosedList, ...techMACClosedList] : [...reactiveClosedList, ...macClosedList],
     },
-    'Avg Closed/Day/SDE': reactiveClosedList,
+    'Avg Closed/Day/SDE': hasTechFilter ? techReactiveClosedList : reactiveClosedList,
     'Avg Resolution Time': ticketsWithResolved,
     'Avg Response Time': ticketsWithResponsePlan,
     'Total Time Entered': ticketsWithWorkedHours.length > 0 ? ticketsWithWorkedHours : ticketsWithTime,
@@ -1164,9 +1174,15 @@ function renderSDEMetrics() {
     ${sdeCard('Reactive Tickets Received', reactiveReceived, reactiveSource)}
     ${sdeCard('Non-Billable MAC Received', macReceived, macSource)}
     ${sdeCard('Total Received', totalReceived, 'calc')}
-    ${sdeCard('Reactive Tickets Closed', reactiveClosed, hasCompletedData ? reactiveSource : 'needs-data')}
-    ${sdeCard('Non-Billable MAC Closed', macClosed, hasCompletedData ? macSource : (hasQueueData ? macSource : 'manual'))}
-    ${sdeCard('Total Closed', totalClosed, 'calc')}
+    ${sdeCard('Reactive Tickets Closed',
+      hasTechFilter ? techReactiveClosed + ' tech / ' + reactiveClosed + ' total' : reactiveClosed,
+      hasCompletedData ? reactiveSource : 'needs-data')}
+    ${sdeCard('Non-Billable MAC Closed',
+      hasTechFilter ? techMACClosed + ' tech / ' + macClosed + ' total' : macClosed,
+      hasCompletedData ? macSource : (hasQueueData ? macSource : 'manual'))}
+    ${sdeCard('Total Closed',
+      hasTechFilter ? techTotalClosed + ' tech / ' + totalClosed + ' total' : totalClosed,
+      'calc')}
     ${sdeCard('Kill Rate',
       hasTechFilter
         ? (techKillRate !== 'N/A' ? techKillRate + '% tech / ' + totalKillRate + '% total' : 'N/A')
@@ -1176,7 +1192,11 @@ function renderSDEMetrics() {
 
   // --- Render Efficiency ---
   $('#sde-efficiency-grid').innerHTML = `
-    ${sdeCard('Avg Closed/Day/SDE', avgClosedPerDayPerSDE, hasCompletedData ? 'calc' : 'needs-data')}
+    ${sdeCard('Avg Closed/Day/SDE',
+      hasTechFilter && techAvgClosedPerDay
+        ? techAvgClosedPerDay + ' tech / ' + avgClosedPerDayPerSDE + ' team'
+        : avgClosedPerDayPerSDE,
+      hasCompletedData ? 'calc' : 'needs-data')}
     ${sdeCard('Avg Escalation Closed/Day', avgEscPerDay, escalationClosed > 0 ? 'calc' : 'manual')}
     ${sdeCard('Avg Resolution Time', avgResolutionTime !== 'N/A' ? avgResolutionTime + ' min' : 'N/A', avgResolutionTime !== 'N/A' ? resTimeSource : 'needs-data')}
     ${sdeCard('Avg Response Time', avgResponseTime !== 'N/A' ? avgResponseTime + ' min' : 'N/A', avgResponseSource)}
