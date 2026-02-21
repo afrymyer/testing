@@ -883,9 +883,9 @@ const SDE_KPI_INFO = {
   'Avg Resolution Time': 'Average resolution time for all reactive tickets closed during the month. Resolution time = total time worked from first touch (status changed to In Progress) through completion (status changed to Complete). Target: 30 minutes or less. Critical to client success and retention.',
   'Avg Response Time': 'Average response time for closed reactive tickets during the month. Measured from when ticket is entered in queue (opened and assigned to SDE) until first touch by SDE (status changed to In Progress). Target: 30 minutes or less. Critical to client success and retention.',
   'Total Time Entered': 'Total time entered by SDEs on all reactive tickets and non-billable MAC requests worked for the month, regardless of open or closed status. Actual time must be reported. Helps determine SDE effective utilization and labor per endpoint. Assists leadership with analysis of SDE efficiency and ensures time is accurately applied for resolution time KPI accuracy.',
-  'Open Tickets at EOD': 'Number of tickets still open (not completed) at end of period.',
-  'Tickets > 5 Days Old': 'Tickets created more than 5 days ago that are still in the dataset.',
-  'Agreement Utilization': 'Percentage of agreement hours utilized. Manual input.',
+  'Open Tickets at EOD': 'Number of tickets still open at end of day. Target: 25 or fewer. More than 25 or a steadily rising count indicates team capacity, operational process, or skill set issues. Starting the day with fewer tickets reduces team stress. Determining how to reduce tickets on board at day\'s end is essential.',
+  'Tickets > 5 Days Old': 'Average number of tickets over 5 days old in the reactive services queue for the month. Target: 10 tickets or fewer. Helps identify stagnating tickets and SDE resource, performance, and technical skillset challenges. Also helps identify if escalation processes are being used effectively by team members.',
+  'Agreement Utilization': 'Billable hours logged by SDEs (against agreements or MACs) compared to dedicated team hours. Auto-calculated based on SDE headcount assuming a 40-hour work week. Target: 90% or higher billable utilization. Remaining time is typically utilized by internal meetings, PTO, and training.',
   'CSAT Score Average': 'Average customer satisfaction score. Manual input.',
   'CSAT Response Rate': 'Percentage of tickets with CSAT responses. Manual input.',
 };
