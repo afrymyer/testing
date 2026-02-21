@@ -113,6 +113,79 @@ class AutotaskClient {
     const issueField = (data.fields || []).find(f => f.name === 'issueType');
     return issueField ? issueField.picklistValues || [] : [];
   }
+
+  /**
+   * Fetch active resources (technicians/SDEs) from Autotask.
+   * Uses the Resources query endpoint to get all active resources.
+   */
+  async getResources() {
+    const filter = {
+      filter: [
+        { op: 'eq', field: 'isActive', value: true },
+        { op: 'eq', field: 'resourceType', value: 'Employee' },
+      ],
+      MaxRecords: 500,
+    };
+
+    const data = await this.request('/Resources/query', 'POST', filter);
+    return (data.items || []).map(r => ({
+      id: r.id,
+      firstName: r.firstName,
+      lastName: r.lastName,
+      email: r.email,
+      name: `${r.firstName} ${r.lastName}`,
+    }));
+  }
+
+  /**
+   * Fetch time entries for a set of ticket IDs.
+   * Returns a map of ticketID -> total hours worked.
+   */
+  async getTimeEntriesForTickets(ticketIds) {
+    if (!ticketIds || ticketIds.length === 0) return {};
+
+    const hoursMap = {};
+
+    // Autotask limits query complexity, batch ticket IDs
+    const batchSize = 50;
+    for (let i = 0; i < ticketIds.length; i += batchSize) {
+      const batch = ticketIds.slice(i, i + batchSize);
+
+      const filter = {
+        filter: batch.map(id => ({
+          op: 'eq',
+          field: 'ticketID',
+          value: id,
+        })),
+        MaxRecords: 500,
+      };
+
+      // If multiple ticket IDs, wrap in an OR group
+      if (batch.length > 1) {
+        filter.filter = [{
+          op: 'or',
+          items: batch.map(id => ({
+            op: 'eq',
+            field: 'ticketID',
+            value: id,
+          })),
+        }];
+      }
+
+      try {
+        const data = await this.request('/TimeEntries/query', 'POST', filter);
+        for (const entry of (data.items || [])) {
+          const tid = entry.ticketID;
+          if (!hoursMap[tid]) hoursMap[tid] = 0;
+          hoursMap[tid] += (entry.hoursWorked || 0);
+        }
+      } catch {
+        // If time entries fail, continue without them
+      }
+    }
+
+    return hoursMap;
+  }
 }
 
 module.exports = AutotaskClient;

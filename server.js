@@ -86,9 +86,34 @@ app.get('/api/tickets', async (req, res) => {
       }
     }
 
-    const analyzed = analyzeTickets(tickets);
+    // Enrich tickets with worked hours from time entries
+    let hoursMap = {};
+    const enrichTimeEntries = req.query.enrichHours !== 'false';
+    if (enrichTimeEntries && tickets.length > 0) {
+      try {
+        const ticketIds = tickets.map(t => t.id).filter(Boolean);
+        hoursMap = await autotaskClient.getTimeEntriesForTickets(ticketIds);
+      } catch {
+        // Continue without time entry data
+      }
+    }
+
+    // Attach workedHours and assignedResourceID to each ticket before analysis
+    const enrichedTickets = tickets.map(t => ({
+      ...t,
+      workedHours: hoursMap[t.id] || 0,
+      assignedResourceID: t.assignedResourceID || null,
+    }));
+
+    // Filter out zero worked-hours tickets if requested
+    const excludeZeroHours = req.query.excludeZeroHours === 'true';
+    const filteredTickets = excludeZeroHours
+      ? enrichedTickets.filter(t => t.workedHours > 0)
+      : enrichedTickets;
+
+    const analyzed = analyzeTickets(filteredTickets);
     const summary = getSummary(analyzed);
-    const analytics = getDeepAnalytics(analyzed, tickets);
+    const analytics = getDeepAnalytics(analyzed, filteredTickets);
 
     res.json({ tickets: analyzed, summary, analytics });
   } catch (err) {
@@ -161,6 +186,21 @@ app.get('/api/queues', async (req, res) => {
     }
     const queues = await autotaskClient.getQueues();
     res.json(queues);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/resources - Fetch Autotask resources (technicians/SDEs)
+ */
+app.get('/api/resources', async (req, res) => {
+  try {
+    if (!autotaskClient) {
+      return res.status(503).json({ error: 'Autotask API not configured.' });
+    }
+    const resources = await autotaskClient.getResources();
+    res.json(resources);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

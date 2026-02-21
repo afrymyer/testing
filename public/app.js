@@ -2,6 +2,8 @@
 let allTickets = [];
 let currentAnalytics = null;
 let currentScript = null;
+let allResources = []; // { id, name, email }
+let selectedTechnicians = []; // resource IDs
 
 // ── DOM Elements ──
 const $ = (sel) => document.querySelector(sel);
@@ -77,6 +79,7 @@ async function init() {
       statusBar.className = 'status-bar connected';
       statusText.textContent = 'Connected to Autotask API. Select filters and click "Fetch Tickets" to load and analyze.';
       loadQueues();
+      loadResources();
     } else {
       statusBar.className = 'status-bar demo';
       statusText.textContent = 'Autotask API not configured. Use "Load Demo Tickets" to test, or configure .env for live data.';
@@ -143,6 +146,66 @@ function setupQueueDropdown() {
   });
 }
 
+// ── Load Resources (Technicians) ──
+async function loadResources() {
+  try {
+    const res = await fetch('/api/resources');
+    if (!res.ok) return;
+    allResources = await res.json();
+    const container = $('#tech-options');
+
+    const sorted = [...allResources].sort((a, b) => a.name.localeCompare(b.name));
+    for (const r of sorted) {
+      const label = document.createElement('label');
+      label.className = 'multi-select-option';
+      label.innerHTML = `<input type="checkbox" value="${r.id}" /> ${escHtml(r.name)}`;
+      label.querySelector('input').addEventListener('change', updateTechSelection);
+      container.appendChild(label);
+    }
+  } catch {
+    // Silently fail - tech selection stays at "All Technicians"
+  }
+}
+
+function updateTechSelection() {
+  const checked = document.querySelectorAll('#tech-options input:checked');
+  selectedTechnicians = Array.from(checked).map(cb => parseInt(cb.value));
+  const trigger = $('#tech-trigger');
+  const note = $('#tech-filter-note');
+
+  if (selectedTechnicians.length === 0) {
+    trigger.textContent = 'All Technicians';
+    note.textContent = '';
+  } else if (selectedTechnicians.length <= 2) {
+    const labels = Array.from(checked).map(cb => cb.parentElement.textContent.trim());
+    trigger.textContent = labels.join(', ');
+    note.textContent = `Metrics filtered to ${selectedTechnicians.length} technician${selectedTechnicians.length > 1 ? 's' : ''}`;
+  } else {
+    trigger.textContent = `${selectedTechnicians.length} technicians selected`;
+    note.textContent = `Metrics filtered to ${selectedTechnicians.length} technicians`;
+  }
+
+  // Re-render SDE metrics with new technician filter
+  if (allTickets.length > 0) {
+    renderSDEMetrics();
+  }
+}
+
+function setupTechDropdown() {
+  const trigger = $('#tech-trigger');
+  const dropdown = $('#tech-dropdown');
+
+  trigger.addEventListener('click', () => {
+    dropdown.classList.toggle('hidden');
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!$('#tech-select-wrap').contains(e.target)) {
+      dropdown.classList.add('hidden');
+    }
+  });
+}
+
 // ── Fetch from Autotask ──
 async function fetchTickets() {
   statusText.innerHTML = '<span class="loading-spinner"></span>Fetching tickets from Autotask...';
@@ -150,11 +213,14 @@ async function fetchTickets() {
   const { from, to } = getDateRange($('#timeframe-select').value);
   const includeCompleted = $('#include-completed').checked;
 
+  const excludeZeroHours = $('#exclude-zero-hours').checked;
+
   const params = new URLSearchParams();
   if (selectedQueues.length > 0) params.set('queueIds', selectedQueues.join(','));
   if (from) params.set('dateFrom', from);
   if (to) params.set('dateTo', to);
   if (includeCompleted) params.set('includeCompleted', 'true');
+  if (excludeZeroHours) params.set('excludeZeroHours', 'true');
 
   try {
     const res = await fetch(`/api/tickets?${params}`);
@@ -421,6 +487,7 @@ function renderTickets(tickets) {
     const priorityClass = priorityLabel ? `badge-priority-${priorityLabel.toLowerCase()}` : '';
 
     const readinessClass = t.automationReadiness || 'manual';
+    const resourceName = getResourceName(t.assignedResourceID);
 
     return `
       <div class="ticket-card ${t.isQuickHitter ? 'quick-hitter' : ''}" onclick="openTicketDetail('${t.ticketId}')">
@@ -433,6 +500,8 @@ function renderTickets(tickets) {
           <span class="badge badge-readiness badge-readiness-${readinessClass}">${t.automationReadinessLabel || 'Manual'}</span>
           ${t.isQuickHitter ? '<span class="badge badge-quick">Quick Hitter</span>' : ''}
           ${t.estimatedMinutes ? `<span class="badge badge-time">~${t.estimatedMinutes} min</span>` : ''}
+          ${t.workedHours > 0 ? `<span class="badge badge-worked">${t.workedHours.toFixed(2)}h worked</span>` : ''}
+          ${resourceName ? `<span class="badge badge-tech">${escHtml(resourceName)}</span>` : ''}
           ${priorityLabel ? `<span class="badge ${priorityClass}">${priorityLabel}</span>` : ''}
           <div class="score-bar">
             Auto:
@@ -600,6 +669,7 @@ function openTicketDetail(ticketId) {
   const priorityClass = priorityLabel ? `badge-priority-${priorityLabel.toLowerCase()}` : '';
   const scoreClass = t.automationScore >= 80 ? 'high' : t.automationScore >= 50 ? 'medium' : 'low';
   const readinessClass = t.automationReadiness || 'manual';
+  const resourceName = getResourceName(t.assignedResourceID);
 
   const scripts = (t.suggestedScripts || []).map(s =>
     `<button class="script-btn" onclick="event.stopPropagation(); viewScript('${s.type}', '${s.name}')">${s.label}</button>`
@@ -619,6 +689,8 @@ function openTicketDetail(ticketId) {
         <span class="badge badge-readiness badge-readiness-${readinessClass}">${t.automationReadinessLabel || 'Manual'}</span>
         ${t.isQuickHitter ? '<span class="badge badge-quick">Quick Hitter</span>' : ''}
         ${t.estimatedMinutes ? `<span class="badge badge-time">~${t.estimatedMinutes} min</span>` : ''}
+        ${t.workedHours > 0 ? `<span class="badge badge-worked">${t.workedHours.toFixed(2)}h worked</span>` : ''}
+        ${resourceName ? `<span class="badge badge-tech">${escHtml(resourceName)}</span>` : ''}
         <span class="badge ${priorityClass}">${priorityLabel}</span>
       </div>
 
@@ -639,8 +711,16 @@ function openTicketDetail(ticketId) {
           <div class="detail-stat-value">${t.estimatedMinutes ? t.estimatedMinutes + ' min' : 'Unknown'}</div>
         </div>
         <div class="detail-stat">
+          <div class="detail-stat-label">Worked Hours</div>
+          <div class="detail-stat-value">${t.workedHours > 0 ? t.workedHours.toFixed(2) + 'h' : 'None'}</div>
+        </div>
+        <div class="detail-stat">
           <div class="detail-stat-label">Match Confidence</div>
           <div class="detail-stat-value">${t.matchConfidence}%</div>
+        </div>
+        <div class="detail-stat">
+          <div class="detail-stat-label">Assigned To</div>
+          <div class="detail-stat-value">${resourceName || 'Unassigned'}</div>
         </div>
         <div class="detail-stat">
           <div class="detail-stat-label">Quick Win Value</div>
@@ -794,9 +874,14 @@ function renderSDEMetrics() {
   const macReceived = parseInt($('#sde-mac-received').value) || 0;
   const macClosed = parseInt($('#sde-mac-closed').value) || 0;
 
+  // Filter tickets by selected technicians (if any selected)
+  const filteredTickets = selectedTechnicians.length > 0
+    ? allTickets.filter(t => t.assignedResourceID && selectedTechnicians.includes(t.assignedResourceID))
+    : allTickets;
+
   // Auto-calculated from ticket data
-  const totalTickets = allTickets.length;
-  const closedTickets = allTickets.filter(t => t.status === 5 || t.status === 'Complete').length;
+  const totalTickets = filteredTickets.length;
+  const closedTickets = filteredTickets.filter(t => t.status === 5 || t.status === 'Complete').length;
 
   // For open/closed split: if includeCompleted was checked, we have both
   // Otherwise all loaded tickets are open
@@ -811,8 +896,9 @@ function renderSDEMetrics() {
   const killRate = totalReceived > 0 ? ((totalClosed / totalReceived) * 100).toFixed(1) : 'N/A';
 
   // Avg tickets closed per day per SDE
-  const avgClosedPerDayPerSDE = (reactiveClosed > 0 && businessDays > 0 && headcount > 0)
-    ? (reactiveClosed / businessDays / headcount).toFixed(1)
+  const sdeCount = selectedTechnicians.length > 0 ? selectedTechnicians.length : headcount;
+  const avgClosedPerDayPerSDE = (reactiveClosed > 0 && businessDays > 0 && sdeCount > 0)
+    ? (reactiveClosed / businessDays / sdeCount).toFixed(1)
     : 'N/A';
 
   // Avg escalation tickets closed per day
@@ -820,14 +906,23 @@ function renderSDEMetrics() {
     ? (escalationClosed / businessDays).toFixed(1)
     : 'N/A';
 
-  // Avg resolution time (from ticket data estimatedMinutes)
-  const ticketsWithTime = allTickets.filter(t => t.estimatedMinutes > 0);
-  const avgResolutionTime = ticketsWithTime.length > 0
-    ? Math.round(ticketsWithTime.reduce((s, t) => s + t.estimatedMinutes, 0) / ticketsWithTime.length)
-    : 'N/A';
+  // Use actual worked hours from time entries if available, fall back to estimated minutes
+  const ticketsWithWorkedHours = filteredTickets.filter(t => t.workedHours > 0);
+  const ticketsWithTime = filteredTickets.filter(t => t.estimatedMinutes > 0);
+  const hasRealTimeData = ticketsWithWorkedHours.length > 0;
 
-  // Total time entered on reactive + MAC (estimated)
-  const totalTimeEntered = ticketsWithTime.reduce((s, t) => s + t.estimatedMinutes, 0);
+  const avgResolutionTime = hasRealTimeData
+    ? Math.round((ticketsWithWorkedHours.reduce((s, t) => s + t.workedHours, 0) / ticketsWithWorkedHours.length) * 60)
+    : ticketsWithTime.length > 0
+      ? Math.round(ticketsWithTime.reduce((s, t) => s + t.estimatedMinutes, 0) / ticketsWithTime.length)
+      : 'N/A';
+
+  // Total time entered - prefer actual worked hours
+  const totalTimeEntered = hasRealTimeData
+    ? Math.round(ticketsWithWorkedHours.reduce((s, t) => s + t.workedHours, 0) * 60)
+    : ticketsWithTime.reduce((s, t) => s + t.estimatedMinutes, 0);
+
+  const timeSource = hasRealTimeData ? 'auto' : (ticketsWithTime.length > 0 ? 'est' : 'needs-data');
 
   // Avg open tickets in queue at EOD (use current open count / business days as proxy)
   const openTickets = totalTickets - closedTickets;
@@ -836,14 +931,15 @@ function renderSDEMetrics() {
   // Avg tickets > 5 days old
   const now = new Date();
   const fiveDaysAgo = new Date(now - 5 * 86400000);
-  const oldTickets = allTickets.filter(t => {
+  const oldTickets = filteredTickets.filter(t => {
     if (!t.createDate) return false;
     return new Date(t.createDate) < fiveDaysAgo;
   }).length;
 
   // --- Render Volume ---
+  const techLabel = selectedTechnicians.length > 0 ? ` (${selectedTechnicians.length} tech${selectedTechnicians.length > 1 ? 's' : ''})` : '';
   $('#sde-volume-grid').innerHTML = `
-    ${sdeCard('SDE Headcount', headcount, '')}
+    ${sdeCard('SDE Headcount', selectedTechnicians.length > 0 ? selectedTechnicians.length : headcount, selectedTechnicians.length > 0 ? 'auto' : '')}
     ${sdeCard('Reactive Tickets Received', reactiveReceived, 'auto')}
     ${sdeCard('Non-Billable MAC Received', macReceived, 'manual')}
     ${sdeCard('Total Received', totalReceived, 'calc')}
@@ -857,9 +953,9 @@ function renderSDEMetrics() {
   $('#sde-efficiency-grid').innerHTML = `
     ${sdeCard('Avg Closed/Day/SDE', avgClosedPerDayPerSDE, hasCompletedData ? 'calc' : 'needs-data')}
     ${sdeCard('Avg Escalation Closed/Day', avgEscPerDay, escalationClosed > 0 ? 'calc' : 'manual')}
-    ${sdeCard('Avg Resolution Time', avgResolutionTime !== 'N/A' ? avgResolutionTime + ' min' : 'N/A', ticketsWithTime.length > 0 ? 'auto' : 'needs-data')}
+    ${sdeCard('Avg Resolution Time', avgResolutionTime !== 'N/A' ? avgResolutionTime + ' min' : 'N/A', avgResolutionTime !== 'N/A' ? timeSource : 'needs-data')}
     ${sdeCard('Avg Response Time', 'N/A', 'needs-data', 'Requires Autotask SLA data')}
-    ${sdeCard('Total Time Entered', totalTimeEntered + ' min', ticketsWithTime.length > 0 ? 'auto' : 'needs-data')}
+    ${sdeCard('Total Time Entered', totalTimeEntered + ' min', timeSource)}
     ${sdeCard('Open Tickets at EOD', avgOpenAtEOD, hasCompletedData ? 'auto' : 'est')}
     ${sdeCard('Tickets > 5 Days Old', oldTickets, 'auto')}
   `;
@@ -890,6 +986,13 @@ function sdeCard(label, value, source, tooltip) {
       ${sourceText ? `<div class="sde-metric-source sde-source-${sourceClass}" title="${tooltip || sourceText}">${sourceText}</div>` : ''}
     </div>
   `;
+}
+
+// ── Get Resource Name by ID ──
+function getResourceName(resourceId) {
+  if (!resourceId || allResources.length === 0) return null;
+  const r = allResources.find(res => res.id === resourceId);
+  return r ? r.name : null;
 }
 
 // ── Escape HTML ──
@@ -923,10 +1026,11 @@ $('#detail-modal').addEventListener('click', (e) => {
   if (e.target === $('#detail-modal')) closeDetailModal();
 });
 
-// Setup tabs, timeframe toggle, & queue dropdown
+// Setup tabs, timeframe toggle, queue & technician dropdowns
 setupTabs();
 setupTimeframeToggle();
 setupQueueDropdown();
+setupTechDropdown();
 
 // Init on load
 init();

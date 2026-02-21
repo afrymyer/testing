@@ -64,8 +64,16 @@
         <!-- Include Completed Toggle -->
         <div class="filter-item">
           <label class="toggle-label">
-            <input type="checkbox" id="include-completed" />
+            <input type="checkbox" id="include-completed" checked />
             Include Completed
+          </label>
+        </div>
+
+        <!-- Exclude Zero Hours Toggle -->
+        <div class="filter-item">
+          <label class="toggle-label">
+            <input type="checkbox" id="exclude-zero-hours" />
+            Exclude 0 Hours
           </label>
         </div>
 
@@ -193,6 +201,18 @@
         <div class="panel-card">
           <h3>Service Desk Engineer (SDE) Performance Metrics</h3>
           <p class="panel-desc">Key operational metrics. Auto-calculated values update from ticket data. Enter manual values below.</p>
+
+          <!-- Technician / Resource Selector -->
+          <div class="sde-tech-selector">
+            <label>Filter by Technician:</label>
+            <div class="multi-select-wrap" id="tech-select-wrap">
+              <button type="button" class="multi-select-trigger" id="tech-trigger">All Technicians</button>
+              <div class="multi-select-dropdown hidden" id="tech-dropdown">
+                <div id="tech-options"></div>
+              </div>
+            </div>
+            <span id="tech-filter-note" class="tech-filter-note"></span>
+          </div>
 
           <div class="sde-inputs-row">
             <div class="sde-input-group">
