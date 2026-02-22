@@ -207,6 +207,6 @@ app.get('/api/resources', async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Autotask Analysis Tool running on http://localhost:${PORT}`);
+  console.log(`IntermixIT Ticket Analyzer running on http://localhost:${PORT}`);
   console.log(`Autotask API: ${autotaskClient ? 'Configured' : 'Not configured (demo mode)'}`);
 });

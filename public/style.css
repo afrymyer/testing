@@ -8,8 +8,9 @@
   --border: #2e3348;
   --text: #e1e4ed;
   --text-dim: #8b8fa3;
-  --primary: #4f8ff7;
-  --primary-hover: #3a7be0;
+  --primary: #7AC143;
+  --primary-hover: #6aad38;
+  --accent: #F5C518;
   --green: #34d399;
   --yellow: #fbbf24;
   --orange: #fb923c;
@@ -27,7 +28,7 @@ body {
 
 header {
   background: var(--surface);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 2px solid var(--primary);
   padding: 1.5rem 2rem;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
   position: relative;
@@ -37,6 +38,16 @@ header {
 header h1 {
   font-size: 1.5rem;
   font-weight: 700;
+}
+
+.brand-name {
+  color: var(--primary);
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.brand-x {
+  color: var(--accent);
 }
 
 .subtitle {
@@ -126,7 +137,7 @@ main {
 .filter-item input[type="date"]:focus {
   outline: none;
   border-color: var(--primary);
-  box-shadow: 0 0 0 2px rgba(79, 143, 247, 0.25);
+  box-shadow: 0 0 0 2px rgba(122, 193, 67, 0.25);
 }
 
 .filter-item input[type="date"] {
@@ -166,20 +177,20 @@ main {
 }
 
 .btn-primary {
-  background: var(--primary);
-  color: #fff;
-  box-shadow: 0 2px 8px rgba(79, 143, 247, 0.3);
+  background: var(--accent);
+  color: #1a1d27;
+  box-shadow: 0 2px 8px rgba(245, 197, 24, 0.3);
 }
 
 .btn-primary:hover {
-  background: var(--primary-hover);
-  box-shadow: 0 4px 14px rgba(79, 143, 247, 0.4);
+  background: #e0b416;
+  box-shadow: 0 4px 14px rgba(245, 197, 24, 0.4);
   transform: translateY(-1px);
 }
 
 .btn-primary:active {
   transform: translateY(1px);
-  box-shadow: 0 1px 4px rgba(79, 143, 247, 0.25);
+  box-shadow: 0 1px 4px rgba(245, 197, 24, 0.25);
 }
 
 .btn-secondary {
@@ -237,7 +248,7 @@ main {
 .multi-select-trigger:focus {
   outline: none;
   border-color: var(--primary);
-  box-shadow: 0 0 0 2px rgba(79, 143, 247, 0.25);
+  box-shadow: 0 0 0 2px rgba(122, 193, 67, 0.25);
 }
 
 .multi-select-dropdown {
@@ -269,7 +280,7 @@ main {
 }
 
 .multi-select-option:hover {
-  background: rgba(79, 143, 247, 0.08);
+  background: rgba(122, 193, 67, 0.08);
 }
 
 .multi-select-option input[type="checkbox"] {
@@ -359,11 +370,11 @@ main {
 
 .tab-btn:hover {
   color: var(--text);
-  background: rgba(79, 143, 247, 0.06);
+  background: rgba(122, 193, 67, 0.06);
 }
 
 .tab-btn:active {
-  background: rgba(79, 143, 247, 0.12);
+  background: rgba(122, 193, 67, 0.12);
 }
 
 .tab-btn:focus-visible {
@@ -374,7 +385,7 @@ main {
 .tab-btn.active {
   color: var(--primary);
   border-bottom-color: var(--primary);
-  background: rgba(79, 143, 247, 0.04);
+  background: rgba(122, 193, 67, 0.04);
 }
 
 .tab-panel {
@@ -424,7 +435,7 @@ main {
 }
 
 .cat-bar-row:hover {
-  background: rgba(79, 143, 247, 0.06);
+  background: rgba(122, 193, 67, 0.06);
 }
 
 .cat-bar-label {
@@ -494,7 +505,7 @@ main {
 }
 
 .data-table tbody tr:hover td {
-  background: rgba(79, 143, 247, 0.07);
+  background: rgba(122, 193, 67, 0.07);
 }
 
 /* === Trend Chart (CSS bars) === */
@@ -565,7 +576,7 @@ main {
 
 .opportunity-card:hover {
   border-color: var(--primary);
-  box-shadow: 0 4px 14px rgba(79, 143, 247, 0.15);
+  box-shadow: 0 4px 14px rgba(122, 193, 67, 0.15);
   transform: translateY(-1px);
 }
 
@@ -695,7 +706,7 @@ main {
 
 .ticket-card:hover {
   border-color: var(--primary);
-  box-shadow: 0 4px 14px rgba(79, 143, 247, 0.15);
+  box-shadow: 0 4px 14px rgba(122, 193, 67, 0.15);
   transform: translateY(-1px);
 }
 
@@ -753,7 +764,7 @@ main {
   box-shadow: 0 1px 6px rgba(0, 0, 0, 0.2);
 }
 
-.badge-category { background: rgba(79, 143, 247, 0.15); color: var(--primary); }
+.badge-category { background: rgba(122, 193, 67, 0.15); color: var(--primary); }
 .badge-quick { background: rgba(52, 211, 153, 0.15); color: var(--green); }
 .badge-time { background: rgba(251, 191, 36, 0.15); color: var(--yellow); }
 .badge-priority-critical { background: rgba(248, 113, 113, 0.15); color: var(--red); }
@@ -937,7 +948,7 @@ main {
 
 .library-card:hover {
   border-color: var(--primary);
-  box-shadow: 0 4px 14px rgba(79, 143, 247, 0.15);
+  box-shadow: 0 4px 14px rgba(122, 193, 67, 0.15);
   transform: translateY(-2px);
 }
 
@@ -978,9 +989,9 @@ main {
 }
 
 .badge-readiness-script_assist {
-  background: rgba(79, 143, 247, 0.15);
+  background: rgba(122, 193, 67, 0.15);
   color: var(--primary);
-  border: 1px solid rgba(79, 143, 247, 0.25);
+  border: 1px solid rgba(122, 193, 67, 0.25);
 }
 
 .badge-readiness-manual {
@@ -1221,7 +1232,7 @@ main {
 }
 
 .script-matched code {
-  background: rgba(79, 143, 247, 0.1);
+  background: rgba(122, 193, 67, 0.1);
   color: var(--primary);
   padding: 0.1rem 0.35rem;
   border-radius: 3px;
@@ -1349,7 +1360,7 @@ main {
 }
 
 .qw-ticket-row:hover {
-  background: rgba(79, 143, 247, 0.08);
+  background: rgba(122, 193, 67, 0.08);
 }
 
 .qw-ticket-title {
@@ -1433,7 +1444,7 @@ main {
 .sde-input-group input:focus {
   outline: none;
   border-color: var(--primary);
-  box-shadow: 0 0 0 2px rgba(79, 143, 247, 0.25);
+  box-shadow: 0 0 0 2px rgba(122, 193, 67, 0.25);
 }
 
 .sde-input-group input::placeholder {
@@ -1467,7 +1478,7 @@ main {
 
 .sde-metric-card.sde-clickable:hover {
   border-color: var(--primary);
-  box-shadow: 0 4px 14px rgba(79, 143, 247, 0.2);
+  box-shadow: 0 4px 14px rgba(122, 193, 67, 0.2);
 }
 
 .sde-drilldown-hint {
@@ -1509,7 +1520,7 @@ main {
 }
 
 .sde-source-calc {
-  background: rgba(79, 143, 247, 0.12);
+  background: rgba(122, 193, 67, 0.12);
   color: var(--primary);
 }
 
@@ -1642,7 +1653,7 @@ main {
 }
 
 .drilldown-row:hover td {
-  background: rgba(79, 143, 247, 0.1) !important;
+  background: rgba(122, 193, 67, 0.1) !important;
 }
 
 .drilldown-ticket-id {

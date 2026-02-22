@@ -102,12 +102,12 @@ async function init() {
 
     if (data.autotaskConfigured) {
       statusBar.className = 'status-bar connected';
-      statusText.textContent = 'Connected to Autotask API. Select filters and click "Fetch Tickets" to load and analyze.';
+      statusText.textContent = 'Connected to IntermixIT Ticket Analyzer. Select filters and click "Fetch Tickets" to load and analyze.';
       loadQueues();
       loadResources();
     } else {
       statusBar.className = 'status-bar demo';
-      statusText.textContent = 'Autotask API not configured. Use "Load Demo Tickets" to test, or configure .env for live data.';
+      statusText.textContent = 'API not configured. Use "Load Demo Tickets" to test, or configure .env for live data.';
     }
   } catch {
     statusBar.className = 'status-bar demo';
@@ -253,7 +253,7 @@ function setupTechDropdown() {
 
 // ── Fetch from Autotask ──
 async function fetchTickets() {
-  statusText.innerHTML = '<span class="loading-spinner"></span>Fetching tickets from Autotask...';
+  statusText.innerHTML = '<span class="loading-spinner"></span>Fetching tickets...';
 
   const { from, to } = getDateRange($('#timeframe-select').value);
   const includeCompleted = $('#include-completed').checked;
@@ -427,7 +427,7 @@ function renderTrendChart(trendData) {
   const note = $('#trend-note');
 
   if (!trendData || trendData.length === 0) {
-    container.innerHTML = '<div class="empty-state"><p>No date data available for trend analysis. Live Autotask tickets include creation dates.</p></div>';
+    container.innerHTML = '<div class="empty-state"><p>No date data available for trend analysis. Live tickets include creation dates.</p></div>';
     note.textContent = '';
     return;
   }
@@ -565,7 +565,7 @@ function showEmptyState() {
   ticketsContainer.innerHTML = `
     <div class="empty-state">
       <h3>No tickets loaded</h3>
-      <p>Click "Fetch Tickets" to pull from Autotask, or "Load Demo Tickets" to see sample data.</p>
+      <p>Click "Fetch Tickets" to pull live data, or "Load Demo Tickets" to see sample data.</p>
     </div>`;
 }
 

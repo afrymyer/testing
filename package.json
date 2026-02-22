@@ -1,7 +1,7 @@
 {
-  "name": "autotask-analysis-tool",
+  "name": "intermixit-ticket-analyzer",
   "version": "1.0.0",
-  "description": "Autotask ticket analyzer - identifies quick-hitter tickets and maps them to Datto/PIA PowerShell automation scripts",
+  "description": "IntermixIT Ticket Analyzer - identifies quick-hitter tickets and maps them to Datto/PIA PowerShell automation scripts",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
