@@ -130,7 +130,7 @@ function getQueueName(queueID) {
 function isMACQueue(queueID) {
   if (!queueID) return false;
   const name = getQueueName(queueID).toLowerCase();
-  return name.includes('m/a/c') || name.includes('mac') || name.includes('move') || name.includes('add') || name.includes('change');
+  return name.includes('m/a/c') || name.includes('mac') || name.includes('non-billable');
 }
 
 function isReactiveQueue(queueID) {
@@ -991,10 +991,10 @@ function renderSDEMetrics() {
   const allMACTickets = allTickets.filter(t => isMACQueue(t.queueID));
 
   const reactiveReceivedList = hasQueueData
-    ? allReactiveTickets.filter(t => t.workedHours > 0)
-    : allTickets.filter(t => t.workedHours > 0);
+    ? allReactiveTickets
+    : allTickets;
   const macReceivedList = hasQueueData
-    ? allMACTickets.filter(t => t.workedHours > 0)
+    ? allMACTickets
     : [];
 
   const reactiveClosedList = hasQueueData
