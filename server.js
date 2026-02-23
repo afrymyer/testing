@@ -85,6 +85,8 @@ app.get('/api/tickets', async (req, res) => {
       }
     }
 
+    console.log(`[API] Fetched ${tickets.length} tickets (includeCompleted=${includeCompleted}, queues=${queueIdList.join(',') || 'all'})`);
+
     // Enrich tickets with worked hours from time entries
     let hoursMap = {};
     const enrichTimeEntries = req.query.enrichHours !== 'false';

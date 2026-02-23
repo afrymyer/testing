@@ -24,6 +24,25 @@ class AutotaskClient {
   }
 
   /**
+   * Paginated query — follows nextPageUrl to fetch all matching records.
+   */
+  async queryAll(endpoint, filter) {
+    let allItems = [];
+    const data = await this.request(endpoint, 'POST', filter);
+    allItems = allItems.concat(data.items || []);
+
+    let nextUrl = data.pageDetails && data.pageDetails.nextPageUrl;
+    while (nextUrl) {
+      const res = await fetch(nextUrl, { method: 'GET', headers: this.headers });
+      if (!res.ok) break;
+      const page = await res.json();
+      allItems = allItems.concat(page.items || []);
+      nextUrl = page.pageDetails && page.pageDetails.nextPageUrl;
+    }
+    return allItems;
+  }
+
+  /**
    * Fetch open tickets, optionally filtered by queue/status/date range.
    * Autotask REST API uses a query object for filtering.
    */
@@ -55,6 +74,7 @@ class AutotaskClient {
   async getAllTickets({ queueId, maxRecords = 500, dateFrom, dateTo } = {}) {
     const filter = {
       filter: [],
+      MaxRecords: maxRecords,
     };
     if (queueId) {
       filter.filter.push({ op: 'eq', field: 'queueID', value: queueId });
@@ -65,10 +85,8 @@ class AutotaskClient {
     if (dateTo) {
       filter.filter.push({ op: 'lte', field: 'createDate', value: dateTo });
     }
-    filter.MaxRecords = maxRecords;
 
-    const data = await this.request('/Tickets/query', 'POST', filter);
-    return data.items || [];
+    return this.queryAll('/Tickets/query', filter);
   }
 
   /**
