@@ -1026,6 +1026,17 @@ function renderSDEMetrics() {
   const techClosed = techReactiveClosedList.length + (hasQueueData ? techMACClosedList.length : (parseInt($('#sde-mac-closed').value) || 0));
   const techKillRate = totalReceived > 0 ? ((techClosed / totalReceived) * 100).toFixed(1) : 'N/A';
 
+  // Zero worked hours: completed tickets with 0.00 worked hours
+  const allClosedReactive = hasQueueData
+    ? allReactiveTickets.filter(t => t.status === 5 || t.status === 'Complete')
+    : allTickets.filter(t => t.status === 5 || t.status === 'Complete');
+  const allClosedMAC = hasQueueData
+    ? allMACTickets.filter(t => t.status === 5 || t.status === 'Complete')
+    : [];
+  const zeroHoursList = [...allClosedReactive, ...allClosedMAC].filter(t => !t.workedHours || t.workedHours === 0);
+  const allClosedTotal = allClosedReactive.length + allClosedMAC.length;
+  const zeroHoursPct = allClosedTotal > 0 ? ((zeroHoursList.length / allClosedTotal) * 100).toFixed(1) : 'N/A';
+
   // Use tech kill rate as the primary display when techs are selected, otherwise total
   const hasTechFilter = selectedTechnicians.length > 0;
   const killRate = hasTechFilter ? techKillRate : totalKillRate;
@@ -1162,6 +1173,10 @@ function renderSDEMetrics() {
       techClosed: hasTechFilter ? techClosed : null,
       techRate: hasTechFilter ? techKillRate : null,
       tickets: hasTechFilter ? [...techReactiveClosedList, ...techMACClosedList] : [...reactiveClosedList, ...macClosedList],
+      zeroHoursCount: zeroHoursList.length,
+      zeroHoursPct,
+      zeroHoursTotal: allClosedTotal,
+      zeroHoursTickets: zeroHoursList,
     },
     'Avg Closed/Day/SDE': hasTechFilter ? techReactiveClosedList : reactiveClosedList,
     'Avg Resolution Time': ticketsWithResolved,
@@ -1190,7 +1205,8 @@ function renderSDEMetrics() {
       hasTechFilter
         ? (techKillRate !== 'N/A' ? techKillRate + '% tech / ' + totalKillRate + '% total' : 'N/A')
         : (totalKillRate !== 'N/A' ? totalKillRate + '%' : 'N/A'),
-      totalReceived > 0 ? 'calc' : 'needs-data')}
+      totalReceived > 0 ? 'calc' : 'needs-data',
+      zeroHoursPct !== 'N/A' ? zeroHoursList.length + ' of ' + allClosedTotal + ' closed w/ 0 hrs (' + zeroHoursPct + '%)' : '')}
   `;
 
   // --- Render Efficiency ---
@@ -1216,7 +1232,7 @@ function renderSDEMetrics() {
   `;
 }
 
-function sdeCard(label, value, source, tooltip) {
+function sdeCard(label, value, source, subtitle) {
   const sourceLabels = {
     'auto': 'From ticket data',
     'manual': 'Manual input',
@@ -1228,13 +1244,14 @@ function sdeCard(label, value, source, tooltip) {
   const sourceClass = source || '';
   const hasData = sdeMetricSets[label];
   const clickable = hasData ? 'sde-clickable' : '';
-  const kpiDesc = SDE_KPI_INFO[label] || tooltip || sourceText;
+  const kpiDesc = SDE_KPI_INFO[label] || sourceText;
 
   return `
     <div class="sde-metric-card ${clickable}" onclick="openSDEDrilldown('${escHtml(label)}')" title="${escHtml(kpiDesc)}">
       <div class="sde-metric-value">${value}</div>
       <div class="sde-metric-label">${label}</div>
       ${sourceText ? `<div class="sde-metric-source sde-source-${sourceClass}">${sourceText}</div>` : ''}
+      ${subtitle ? `<div class="sde-metric-subtitle">${subtitle}</div>` : ''}
       ${hasData ? '<div class="sde-drilldown-hint">Click to view tickets</div>' : ''}
     </div>
   `;
@@ -1261,6 +1278,12 @@ function openSDEDrilldown(metricLabel) {
           ${data.closed - data.techClosed} closed of ${data.received} received = <strong>${data.received > 0 ? (((data.closed - data.techClosed) / data.received) * 100).toFixed(1) : 'N/A'}%</strong>
         </div>
     ` : '';
+    const zeroHoursSection = data.zeroHoursPct !== 'N/A' ? `
+        <div class="drilldown-formula" style="margin-top:0.5rem; border-top:1px solid var(--border); padding-top:0.5rem;">
+          <span class="drilldown-formula-label">Completed w/ 0 Worked Hours:</span>
+          ${data.zeroHoursCount} of ${data.zeroHoursTotal} completed tickets = <strong>${data.zeroHoursPct}%</strong>
+        </div>
+    ` : '';
     const calcHtml = `
       <div class="drilldown-calc">
         <div class="drilldown-desc">${kpiDesc}</div>
@@ -1269,10 +1292,16 @@ function openSDEDrilldown(metricLabel) {
           Total Closed (${data.closed}) / Total Received (${data.received}) x 100 = <strong>${data.rate}%</strong>
         </div>
         ${techSection}
+        ${zeroHoursSection}
       </div>
     `;
-    const tableHtml = tickets.length > 0 ? renderDrilldownTable(tickets, metricLabel) : '';
-    $('#drilldown-body').innerHTML = calcHtml + tableHtml;
+    const zeroTableHtml = data.zeroHoursTickets && data.zeroHoursTickets.length > 0
+      ? '<h4 style="margin:1rem 0 0.5rem; font-size:0.85rem; color:var(--yellow, #f59e0b);">Tickets Completed with 0 Worked Hours</h4>' + renderDrilldownTable(data.zeroHoursTickets, metricLabel)
+      : '';
+    const closedTableHtml = tickets.length > 0
+      ? '<h4 style="margin:1rem 0 0.5rem; font-size:0.85rem;">Closed Tickets (with worked hours)</h4>' + renderDrilldownTable(tickets, metricLabel)
+      : '';
+    $('#drilldown-body').innerHTML = calcHtml + zeroTableHtml + closedTableHtml;
     $('#drilldown-modal').classList.remove('hidden');
     return;
   }
