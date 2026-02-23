@@ -4,6 +4,7 @@ let currentAnalytics = null;
 let currentScript = null;
 let allResources = []; // { id, name, email }
 let selectedTechnicians = []; // resource IDs
+let lastQueueDiagnostics = null; // server-side queue distribution data
 
 // ── DOM Elements ──
 const $ = (sel) => document.querySelector(sel);
@@ -276,6 +277,7 @@ async function fetchTickets() {
     const data = await res.json();
     allTickets = data.tickets;
     currentAnalytics = data.analytics;
+    lastQueueDiagnostics = data.queueDiagnostics || null;
 
     renderSummary(data.summary);
     renderAnalytics(data.analytics, data.summary);
@@ -951,6 +953,61 @@ const SDE_KPI_INFO = {
   'CSAT Response Rate': 'Percentage of closed tickets that received a CSAT response for the month. Calculated as tickets with CSAT scores divided by total tickets closed. Target: Highest possible. Receiving client feedback is critical to client success and agreement longevity. Manual input.',
 };
 
+function renderReconciliation(allReactiveTickets, allMACTickets, reactiveReceivedList, macReceivedList) {
+  const panel = document.getElementById('sde-reconciliation');
+  if (!panel) return;
+
+  const totalTickets = allTickets.length;
+  const reactiveTotal = allReactiveTickets.length;
+  const macTotal = allMACTickets.length;
+  const unclassified = totalTickets - reactiveTotal - macTotal;
+  const reactiveWithHours = reactiveReceivedList.length;
+  const macWithHours = macReceivedList.length;
+  const reactiveZeroHours = reactiveTotal - reactiveWithHours;
+  const macZeroHours = macTotal - macWithHours;
+
+  // Build server-side queue diagnostics if available
+  let serverInfo = '';
+  if (lastQueueDiagnostics) {
+    const entries = Object.entries(lastQueueDiagnostics);
+    serverInfo = entries.map(([qid, data]) => {
+      const qName = getQueueName(qid);
+      return `<tr><td>${qName} (${qid})</td><td>${data.total}</td><td>${data.withHours}</td><td>${data.total - data.withHours}</td></tr>`;
+    }).join('');
+  }
+
+  panel.style.display = '';
+  panel.innerHTML = `
+    <details>
+      <summary style="cursor:pointer; font-size: 0.85em; color: var(--text-secondary); margin-top: 8px;">
+        Reconciliation: ${totalTickets} total | ${reactiveWithHours} reactive (${reactiveZeroHours} w/o hours) | ${macWithHours} MAC (${macZeroHours} w/o hours)${unclassified > 0 ? ' | ' + unclassified + ' unclassified' : ''}
+      </summary>
+      <div style="font-size: 0.8em; padding: 8px; background: var(--bg-secondary); border-radius: 6px; margin-top: 4px;">
+        <table style="width:100%; border-collapse: collapse; font-size: 0.9em;">
+          <thead>
+            <tr style="text-align:left; border-bottom: 1px solid var(--border);">
+              <th style="padding: 2px 6px;">Queue</th>
+              <th style="padding: 2px 6px;">Total</th>
+              <th style="padding: 2px 6px;">Hours &gt; 0</th>
+              <th style="padding: 2px 6px;">Zero Hours</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td style="padding: 2px 6px;">Reactive (client)</td><td style="padding: 2px 6px;">${reactiveTotal}</td><td style="padding: 2px 6px;">${reactiveWithHours}</td><td style="padding: 2px 6px;">${reactiveZeroHours}</td></tr>
+            <tr><td style="padding: 2px 6px;">MAC (client)</td><td style="padding: 2px 6px;">${macTotal}</td><td style="padding: 2px 6px;">${macWithHours}</td><td style="padding: 2px 6px;">${macZeroHours}</td></tr>
+            ${unclassified > 0 ? '<tr><td style="padding: 2px 6px; color: #e74c3c;">Unclassified</td><td style="padding: 2px 6px;">' + unclassified + '</td><td style="padding: 2px 6px;">-</td><td style="padding: 2px 6px;">-</td></tr>' : ''}
+            <tr style="font-weight:bold; border-top: 1px solid var(--border);"><td style="padding: 2px 6px;">Total</td><td style="padding: 2px 6px;">${totalTickets}</td><td style="padding: 2px 6px;">${reactiveWithHours + macWithHours}</td><td style="padding: 2px 6px;">${reactiveZeroHours + macZeroHours}</td></tr>
+          </tbody>
+        </table>
+        ${serverInfo ? '<p style="margin: 6px 0 2px; font-weight: 600;">Server-side queue distribution:</p><table style="width:100%; border-collapse: collapse; font-size: 0.9em;"><thead><tr style="text-align:left; border-bottom: 1px solid var(--border);"><th style="padding: 2px 6px;">Queue</th><th style="padding: 2px 6px;">Total</th><th style="padding: 2px 6px;">Hours > 0</th><th style="padding: 2px 6px;">Zero Hours</th></tr></thead><tbody>' + serverInfo + '</tbody></table>' : ''}
+        <p style="margin: 4px 0 0; color: var(--text-secondary); font-style: italic;">
+          "Received" counts use Hours &gt; 0 filter to match Autotask widget.
+        </p>
+      </div>
+    </details>
+  `;
+}
+
 function renderSDEMetrics() {
   const headcount = parseInt($('#sde-headcount').value) || 1;
 
@@ -986,15 +1043,17 @@ function renderSDEMetrics() {
 
   const hasQueueData = allQueues.length > 0 && allTickets.some(t => t.queueID);
 
-  // All queue splits from allTickets (not tech-filtered) with worked hours > 0
+  // All queue splits from allTickets (not tech-filtered)
   const allReactiveTickets = allTickets.filter(t => isReactiveQueue(t.queueID));
   const allMACTickets = allTickets.filter(t => isMACQueue(t.queueID));
 
+  // "Received" counts must filter by workedHours > 0 to match Autotask widget
+  // (Autotask widget uses: Queue = X AND Worked Hours > 0.00)
   const reactiveReceivedList = hasQueueData
-    ? allReactiveTickets
-    : allTickets;
+    ? allReactiveTickets.filter(t => t.workedHours > 0)
+    : allTickets.filter(t => t.workedHours > 0);
   const macReceivedList = hasQueueData
-    ? allMACTickets
+    ? allMACTickets.filter(t => t.workedHours > 0)
     : [];
 
   const reactiveClosedList = hasQueueData
@@ -1208,6 +1267,9 @@ function renderSDEMetrics() {
       totalReceived > 0 ? 'calc' : 'needs-data',
       zeroHoursPct !== 'N/A' ? zeroHoursList.length + ' of ' + allClosedTotal + ' closed w/ 0 hrs (' + zeroHoursPct + '%)' : '')}
   `;
+
+  // --- Render Reconciliation Panel ---
+  renderReconciliation(allReactiveTickets, allMACTickets, reactiveReceivedList, macReceivedList);
 
   // --- Render Efficiency ---
   $('#sde-efficiency-grid').innerHTML = `

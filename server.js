@@ -94,8 +94,10 @@ app.get('/api/tickets', async (req, res) => {
       try {
         const ticketIds = tickets.map(t => t.id).filter(Boolean);
         hoursMap = await autotaskClient.getTimeEntriesForTickets(ticketIds);
-      } catch {
-        // Continue without time entry data
+        const ticketsWithHours = Object.keys(hoursMap).length;
+        console.log(`[API] Time entries: ${ticketsWithHours}/${ticketIds.length} tickets have worked hours`);
+      } catch (err) {
+        console.warn(`[API] Time entry enrichment failed: ${err.message}`);
       }
     }
 
@@ -106,18 +108,31 @@ app.get('/api/tickets', async (req, res) => {
       assignedResourceID: t.assignedResourceID || null,
     }));
 
-
     // Filter out zero worked-hours tickets if requested
     const excludeZeroHours = req.query.excludeZeroHours === 'true';
     const filteredTickets = excludeZeroHours
       ? enrichedTickets.filter(t => t.workedHours > 0)
       : enrichedTickets;
 
+    if (excludeZeroHours) {
+      console.log(`[API] After excludeZeroHours filter: ${filteredTickets.length}/${enrichedTickets.length} tickets`);
+    }
+
+    // Build queue distribution for diagnostics
+    const queueDist = {};
+    for (const t of enrichedTickets) {
+      const qid = t.queueID || 'null';
+      if (!queueDist[qid]) queueDist[qid] = { total: 0, withHours: 0 };
+      queueDist[qid].total++;
+      if ((hoursMap[t.id] || 0) > 0) queueDist[qid].withHours++;
+    }
+    console.log(`[API] Queue distribution:`, JSON.stringify(queueDist));
+
     const analyzed = analyzeTickets(filteredTickets);
     const summary = getSummary(analyzed);
     const analytics = getDeepAnalytics(analyzed, filteredTickets);
 
-    res.json({ tickets: analyzed, summary, analytics });
+    res.json({ tickets: analyzed, summary, analytics, queueDiagnostics: queueDist });
   } catch (err) {
     console.error('Failed to fetch tickets:', err.message);
     res.status(500).json({ error: err.message });

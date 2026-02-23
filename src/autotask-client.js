@@ -180,11 +180,13 @@ class AutotaskClient {
   /**
    * Fetch time entries for a set of ticket IDs.
    * Returns a map of ticketID -> total hours worked.
+   * Uses queryAll to paginate through all time entries per batch.
    */
   async getTimeEntriesForTickets(ticketIds) {
     if (!ticketIds || ticketIds.length === 0) return {};
 
     const hoursMap = {};
+    let failedBatches = 0;
 
     // Autotask limits query complexity, batch ticket IDs
     const batchSize = 50;
@@ -213,15 +215,21 @@ class AutotaskClient {
       }
 
       try {
-        const data = await this.request('/TimeEntries/query', 'POST', filter);
-        for (const entry of (data.items || [])) {
+        // Use queryAll to paginate through ALL time entries for this batch
+        const entries = await this.queryAll('/TimeEntries/query', filter);
+        for (const entry of entries) {
           const tid = entry.ticketID;
           if (!hoursMap[tid]) hoursMap[tid] = 0;
           hoursMap[tid] += (entry.hoursWorked || 0);
         }
-      } catch {
-        // If time entries fail, continue without them
+      } catch (err) {
+        failedBatches++;
+        console.warn(`[TimeEntries] Batch ${Math.floor(i / batchSize) + 1} failed (tickets ${i + 1}-${Math.min(i + batchSize, ticketIds.length)}): ${err.message}`);
       }
+    }
+
+    if (failedBatches > 0) {
+      console.warn(`[TimeEntries] ${failedBatches} batch(es) failed out of ${Math.ceil(ticketIds.length / batchSize)}. Some tickets may show 0 worked hours.`);
     }
 
     return hoursMap;
