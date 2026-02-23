@@ -1057,6 +1057,17 @@ function renderSDEMetrics() {
   // Avg Response Time - uses firstResponseDateTime or resolutionPlanDateTime (whichever is available)
   // Matches Autotask widget: Status=Complete, Queue=002 Reactive, Worked Hours > 0
   const getResponseDate = (t) => t.firstResponseDateTime || t.resolutionPlanDateTime || null;
+
+  // DEBUG: trace each filter stage for Avg Response Time
+  const dbgCompleted = filteredTickets.filter(t => t.status === 5 || t.status === 'Complete');
+  const dbgReactive = filteredTickets.filter(t => isReactiveQueue(t.queueID));
+  const dbgHours = filteredTickets.filter(t => t.workedHours > 0);
+  console.log(`[DEBUG AvgResp] filteredTickets: ${filteredTickets.length}, completed: ${dbgCompleted.length}, reactive: ${dbgReactive.length}, workedHours>0: ${dbgHours.length}`);
+  if (filteredTickets.length > 0) {
+    const s = filteredTickets[0];
+    console.log(`[DEBUG AvgResp] Sample ticket: status=${s.status} (type=${typeof s.status}), queueID=${s.queueID}, queueName=${getQueueName(s.queueID)}, workedHours=${s.workedHours}, firstResponseDateTime=${s.firstResponseDateTime}, resolutionPlanDateTime=${s.resolutionPlanDateTime}`);
+  }
+
   const completedReactiveWithHours = filteredTickets.filter(t =>
     (t.status === 5 || t.status === 'Complete') && isReactiveQueue(t.queueID) && t.workedHours > 0
   );
