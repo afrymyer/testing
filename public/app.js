@@ -1059,6 +1059,26 @@ function renderSDEMetrics() {
   const ticketsWithResponsePlan = filteredTickets.filter(t =>
     isReactiveQueue(t.queueID) && t.workedHours > 0 && t.createDate && t.resolutionPlanDateTime
   );
+  // Live math debug logging for Avg Response Time
+  console.group('📊 Avg Response Time - Live Math');
+  console.log(`Qualifying tickets: ${ticketsWithResponsePlan.length}`);
+  let responseTimeSum = 0;
+  ticketsWithResponsePlan.forEach((t, i) => {
+    const created = new Date(t.createDate).getTime();
+    const planMet = new Date(t.resolutionPlanDateTime).getTime();
+    const diffMs = planMet - created;
+    const diffMin = diffMs / 60000;
+    responseTimeSum += diffMs;
+    console.log(`  Ticket #${t.ticketNumber || i + 1}: createDate=${t.createDate} | resolutionPlanDateTime=${t.resolutionPlanDateTime} | diff=${diffMs}ms (${diffMin.toFixed(2)} min)`);
+  });
+  if (ticketsWithResponsePlan.length > 0) {
+    console.log(`  Sum: ${responseTimeSum}ms`);
+    console.log(`  Divide by ${ticketsWithResponsePlan.length} tickets: ${responseTimeSum / ticketsWithResponsePlan.length}ms`);
+    console.log(`  Convert to minutes: ${(responseTimeSum / ticketsWithResponsePlan.length / 60000).toFixed(4)} min`);
+    console.log(`  Math.round: ${Math.round(responseTimeSum / ticketsWithResponsePlan.length / 60000)} min`);
+  }
+  console.groupEnd();
+
   const avgResponseTime = ticketsWithResponsePlan.length > 0
     ? Math.round(ticketsWithResponsePlan.reduce((s, t) => {
         const created = new Date(t.createDate).getTime();
