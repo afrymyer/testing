@@ -61,28 +61,27 @@ app.get('/api/tickets', async (req, res) => {
     };
 
     let tickets = [];
-    if (queueIdList.length > 0) {
-      // Fetch from each queue in parallel and merge
-      const fetches = queueIdList.map(qid =>
-        autotaskClient.getOpenTickets({ ...baseOpts, queueId: qid })
-      );
-      const results = await Promise.all(fetches);
-      tickets = results.flat();
-    } else {
-      tickets = await autotaskClient.getOpenTickets(baseOpts);
-    }
-
-    // Optionally merge completed tickets for full analysis
     if (includeCompleted === 'true') {
+      // Fetch ALL tickets (any status) so received counts match Autotask widgets
       if (queueIdList.length > 0) {
-        const completedFetches = queueIdList.map(qid =>
-          autotaskClient.getCompletedTickets({ ...baseOpts, queueId: qid })
+        const fetches = queueIdList.map(qid =>
+          autotaskClient.getAllTickets({ ...baseOpts, queueId: qid })
         );
-        const completedResults = await Promise.all(completedFetches);
-        tickets = tickets.concat(completedResults.flat());
+        const results = await Promise.all(fetches);
+        tickets = results.flat();
       } else {
-        const completed = await autotaskClient.getCompletedTickets(baseOpts);
-        tickets = tickets.concat(completed);
+        tickets = await autotaskClient.getAllTickets(baseOpts);
+      }
+    } else {
+      // Open tickets only (excludes Complete and Waiting Customer)
+      if (queueIdList.length > 0) {
+        const fetches = queueIdList.map(qid =>
+          autotaskClient.getOpenTickets({ ...baseOpts, queueId: qid })
+        );
+        const results = await Promise.all(fetches);
+        tickets = results.flat();
+      } else {
+        tickets = await autotaskClient.getOpenTickets(baseOpts);
       }
     }
 

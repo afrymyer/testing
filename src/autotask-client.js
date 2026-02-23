@@ -50,6 +50,28 @@ class AutotaskClient {
   }
 
   /**
+   * Fetch all tickets in a date range regardless of status.
+   */
+  async getAllTickets({ queueId, maxRecords = 500, dateFrom, dateTo } = {}) {
+    const filter = {
+      filter: [],
+    };
+    if (queueId) {
+      filter.filter.push({ op: 'eq', field: 'queueID', value: queueId });
+    }
+    if (dateFrom) {
+      filter.filter.push({ op: 'gte', field: 'createDate', value: dateFrom });
+    }
+    if (dateTo) {
+      filter.filter.push({ op: 'lte', field: 'createDate', value: dateTo });
+    }
+    filter.MaxRecords = maxRecords;
+
+    const data = await this.request('/Tickets/query', 'POST', filter);
+    return data.items || [];
+  }
+
+  /**
    * Fetch completed tickets in a date range for historical analysis.
    */
   async getCompletedTickets({ queueId, maxRecords = 500, dateFrom, dateTo } = {}) {
