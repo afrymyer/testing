@@ -1054,22 +1054,21 @@ function renderSDEMetrics() {
   const ticketsWithTime = filteredTickets.filter(t => t.estimatedMinutes > 0);
   const hasRealTimeData = ticketsWithWorkedHours.length > 0;
 
-  // Avg Response Time - uses firstResponseDateTime or resolutionPlanDateTime (whichever is available)
+  // Avg Response Time - uses firstResponseDateTime only (matches Autotask widget)
   // Matches Autotask widget: Status=Complete, Queue=002 Reactive, Worked Hours > 0
-  const getResponseDate = (t) => t.firstResponseDateTime || t.resolutionPlanDateTime || null;
   const completedReactiveWithHours = filteredTickets.filter(t =>
     (t.status === 5 || t.status === 'Complete') && isReactiveQueue(t.queueID) && t.workedHours > 0
   );
-  const ticketsWithResponsePlan = completedReactiveWithHours.filter(t =>
-    t.createDate && getResponseDate(t)
+  const ticketsWithFirstResponse = completedReactiveWithHours.filter(t =>
+    t.createDate && t.firstResponseDateTime
   );
 
-  const avgResponseTime = ticketsWithResponsePlan.length > 0
-    ? (ticketsWithResponsePlan.reduce((s, t) => {
-        return s + (new Date(getResponseDate(t)).getTime() - new Date(t.createDate).getTime());
-      }, 0) / ticketsWithResponsePlan.length / 3600000).toFixed(2)
+  const avgResponseTime = ticketsWithFirstResponse.length > 0
+    ? (ticketsWithFirstResponse.reduce((s, t) => {
+        return s + (new Date(t.firstResponseDateTime).getTime() - new Date(t.createDate).getTime());
+      }, 0) / ticketsWithFirstResponse.length / 3600000).toFixed(2)
     : 'N/A';
-  const avgResponseSource = ticketsWithResponsePlan.length > 0 ? 'auto' : 'needs-data';
+  const avgResponseSource = ticketsWithFirstResponse.length > 0 ? 'auto' : 'needs-data';
 
   // Avg Resolution Time - from Autotask resolvedDateTime (Resolved Time Met)
   // Avg Resolution Time - from Autotask workedHours field (Average)
@@ -1166,7 +1165,7 @@ function renderSDEMetrics() {
     },
     'Avg Closed/Day/SDE': hasTechFilter ? techReactiveClosedList : reactiveClosedList,
     'Avg Resolution Time': ticketsWithResolved,
-    'Avg Response Time': ticketsWithResponsePlan,
+    'Avg Response Time': ticketsWithFirstResponse,
     'Total Time Entered': ticketsWithWorkedHours.length > 0 ? ticketsWithWorkedHours : ticketsWithTime,
     'Open Tickets at EOD': openTicketsList,
     'Tickets > 5 Days Old': oldTicketsList,
