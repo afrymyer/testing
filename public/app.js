@@ -1130,7 +1130,7 @@ function renderSDEMetrics() {
 
   const now = new Date();
   const fiveBusinessDaysAgo = subtractBusinessDays(now, 5);
-  const reactiveFiltered = hasQueueData ? filteredTickets.filter(t => t.queueName === 'Reactive Services') : filteredTickets;
+  const reactiveFiltered = hasQueueData ? filteredTickets.filter(t => isReactiveQueue(t.queueID)) : filteredTickets;
   const oldTicketsList = reactiveFiltered.filter(t => {
     if (!t.createDate) return false;
     return new Date(t.createDate) < fiveBusinessDaysAgo;
