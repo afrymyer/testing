@@ -1054,37 +1054,26 @@ function renderSDEMetrics() {
   const ticketsWithTime = filteredTickets.filter(t => t.estimatedMinutes > 0);
   const hasRealTimeData = ticketsWithWorkedHours.length > 0;
 
-  // Avg Response Time - from Autotask resolutionPlanDateTime (Resolution Plan Met)
-  // Completed, Reactive queue (002 - Reactive), worked hours > 0, has resolutionPlanDateTime
+  // Avg Response Time - from Autotask resolutionPlanHours field (Average)
+  // Matches Autotask widget: Status=Complete, Queue=002 Reactive, Worked Hours > 0
   const ticketsWithResponsePlan = filteredTickets.filter(t =>
-    (t.status === 5 || t.status === 'Complete') && isReactiveQueue(t.queueID) && t.workedHours > 0 && t.createDate && t.resolutionPlanDateTime
+    (t.status === 5 || t.status === 'Complete') && isReactiveQueue(t.queueID) && t.workedHours > 0 && t.resolutionPlanHours != null
   );
   // Live math debug logging for Avg Response Time
   console.group('📊 Avg Response Time - Live Math');
   console.log(`Qualifying tickets: ${ticketsWithResponsePlan.length}`);
-  let responseTimeSum = 0;
   ticketsWithResponsePlan.forEach((t, i) => {
-    const created = new Date(t.createDate).getTime();
-    const planMet = new Date(t.resolutionPlanDateTime).getTime();
-    const diffMs = planMet - created;
-    const diffMin = diffMs / 60000;
-    responseTimeSum += diffMs;
-    console.log(`  Ticket #${t.ticketNumber || i + 1}: createDate=${t.createDate} | resolutionPlanDateTime=${t.resolutionPlanDateTime} | diff=${diffMs}ms (${diffMin.toFixed(2)} min)`);
+    console.log(`  Ticket #${t.ticketNumber || i + 1}: resolutionPlanHours=${t.resolutionPlanHours}`);
   });
   if (ticketsWithResponsePlan.length > 0) {
-    console.log(`  Sum: ${responseTimeSum}ms`);
-    console.log(`  Divide by ${ticketsWithResponsePlan.length} tickets: ${responseTimeSum / ticketsWithResponsePlan.length}ms`);
-    console.log(`  Convert to minutes: ${(responseTimeSum / ticketsWithResponsePlan.length / 60000).toFixed(4)} min`);
-    console.log(`  Math.round: ${Math.round(responseTimeSum / ticketsWithResponsePlan.length / 60000)} min`);
+    const sum = ticketsWithResponsePlan.reduce((s, t) => s + t.resolutionPlanHours, 0);
+    console.log(`  Sum: ${sum} hrs`);
+    console.log(`  Divide by ${ticketsWithResponsePlan.length} tickets: ${(sum / ticketsWithResponsePlan.length).toFixed(4)} hrs`);
   }
   console.groupEnd();
 
   const avgResponseTime = ticketsWithResponsePlan.length > 0
-    ? Math.round(ticketsWithResponsePlan.reduce((s, t) => {
-        const created = new Date(t.createDate).getTime();
-        const planMet = new Date(t.resolutionPlanDateTime).getTime();
-        return s + (planMet - created);
-      }, 0) / ticketsWithResponsePlan.length / 60000) // convert ms to minutes
+    ? (ticketsWithResponsePlan.reduce((s, t) => s + t.resolutionPlanHours, 0) / ticketsWithResponsePlan.length).toFixed(2)
     : 'N/A';
   const avgResponseSource = ticketsWithResponsePlan.length > 0 ? 'auto' : 'needs-data';
 
@@ -1223,7 +1212,7 @@ function renderSDEMetrics() {
       hasCompletedData ? 'calc' : 'needs-data')}
     ${sdeCard('Avg Escalation Closed/Day', avgEscPerDay, escalationClosed > 0 ? 'calc' : 'manual')}
     ${sdeCard('Avg Resolution Time', avgResolutionTime !== 'N/A' ? avgResolutionTime + ' min' : 'N/A', avgResolutionTime !== 'N/A' ? resTimeSource : 'needs-data')}
-    ${sdeCard('Avg Response Time', avgResponseTime !== 'N/A' ? avgResponseTime + ' min' : 'N/A', avgResponseSource)}
+    ${sdeCard('Avg Response Time', avgResponseTime !== 'N/A' ? avgResponseTime + ' hrs' : 'N/A', avgResponseSource)}
     ${sdeCard('Total Time Entered', totalTimeEntered + ' min', timeSource)}
     ${sdeCard('Open Tickets at EOD', avgOpenAtEOD !== 'N/A' ? avgOpenAtEOD + ' avg' : 'N/A', avgOpenAtEOD !== 'N/A' ? 'auto' : 'needs-data')}
     ${sdeCard('Tickets > 5 Days Old', oldTicketsList.length, 'auto')}
