@@ -105,6 +105,17 @@ app.get('/api/tickets', async (req, res) => {
       assignedResourceID: t.assignedResourceID || null,
     }));
 
+    // Debug: log raw SLA date fields from first completed ticket
+    const sampleCompleted = tickets.find(t => t.status === 5);
+    if (sampleCompleted) {
+      const dateFields = Object.entries(sampleCompleted)
+        .filter(([k]) => /date|time|hour|resolution|response|sla/i.test(k))
+        .reduce((o, [k, v]) => { o[k] = v; return o; }, {});
+      console.log('[DEBUG] Sample completed ticket SLA/date fields:', JSON.stringify(dateFields, null, 2));
+    } else {
+      console.log('[DEBUG] No completed tickets found in response');
+    }
+
     // Filter out zero worked-hours tickets if requested
     const excludeZeroHours = req.query.excludeZeroHours === 'true';
     const filteredTickets = excludeZeroHours
