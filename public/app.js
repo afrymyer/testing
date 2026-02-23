@@ -1055,9 +1055,10 @@ function renderSDEMetrics() {
   const hasRealTimeData = ticketsWithWorkedHours.length > 0;
 
   // Avg Response Time - from Autotask resolutionPlanDateTime (Resolution Plan Met)
-  // Time from ticket creation to resolution plan being set (Reactive queue only)
-  const reactiveClosedWithHours = reactiveClosedList.filter(t => t.workedHours > 0);
-  const ticketsWithResponsePlan = reactiveClosedWithHours.filter(t => t.createDate && t.resolutionPlanDateTime);
+  // Reactive queue (002 - Reactive), worked hours > 0, has resolutionPlanDateTime
+  const ticketsWithResponsePlan = filteredTickets.filter(t =>
+    isReactiveQueue(t.queueID) && t.workedHours > 0 && t.createDate && t.resolutionPlanDateTime
+  );
   const avgResponseTime = ticketsWithResponsePlan.length > 0
     ? Math.round(ticketsWithResponsePlan.reduce((s, t) => {
         const created = new Date(t.createDate).getTime();
@@ -1068,8 +1069,10 @@ function renderSDEMetrics() {
   const avgResponseSource = ticketsWithResponsePlan.length > 0 ? 'auto' : 'needs-data';
 
   // Avg Resolution Time - from Autotask resolvedDateTime (Resolved Time Met)
-  // Time from ticket creation to resolution (Reactive queue only)
-  const ticketsWithResolved = reactiveClosedWithHours.filter(t => t.createDate && t.resolvedDateTime);
+  // Reactive queue (002 - Reactive), worked hours > 0, has resolvedDateTime
+  const ticketsWithResolved = filteredTickets.filter(t =>
+    isReactiveQueue(t.queueID) && t.workedHours > 0 && t.createDate && t.resolvedDateTime
+  );
   const avgResolutionTime = ticketsWithResolved.length > 0
     ? Math.round(ticketsWithResolved.reduce((s, t) => {
         const created = new Date(t.createDate).getTime();
