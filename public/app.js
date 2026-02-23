@@ -1078,16 +1078,13 @@ function renderSDEMetrics() {
   const avgResponseSource = ticketsWithResponsePlan.length > 0 ? 'auto' : 'needs-data';
 
   // Avg Resolution Time - from Autotask resolvedDateTime (Resolved Time Met)
-  // Completed, Reactive queue (002 - Reactive), worked hours > 0, has resolvedDateTime
+  // Avg Resolution Time - from Autotask workedHours field (Average)
+  // Matches Autotask widget: Status=Complete, Queue=002 Reactive, Worked Hours > 0
   const ticketsWithResolved = filteredTickets.filter(t =>
-    (t.status === 5 || t.status === 'Complete') && isReactiveQueue(t.queueID) && t.workedHours > 0 && t.createDate && t.resolvedDateTime
+    (t.status === 5 || t.status === 'Complete') && isReactiveQueue(t.queueID) && t.workedHours > 0
   );
   const avgResolutionTime = ticketsWithResolved.length > 0
-    ? Math.round(ticketsWithResolved.reduce((s, t) => {
-        const created = new Date(t.createDate).getTime();
-        const resolved = new Date(t.resolvedDateTime).getTime();
-        return s + (resolved - created);
-      }, 0) / ticketsWithResolved.length / 60000) // convert ms to minutes
+    ? (ticketsWithResolved.reduce((s, t) => s + t.workedHours, 0) / ticketsWithResolved.length).toFixed(2)
     : 'N/A';
 
   // Total Time Entered - all tickets regardless of queue
@@ -1211,7 +1208,7 @@ function renderSDEMetrics() {
         : avgClosedPerDayPerSDE,
       hasCompletedData ? 'calc' : 'needs-data')}
     ${sdeCard('Avg Escalation Closed/Day', avgEscPerDay, escalationClosed > 0 ? 'calc' : 'manual')}
-    ${sdeCard('Avg Resolution Time', avgResolutionTime !== 'N/A' ? avgResolutionTime + ' min' : 'N/A', avgResolutionTime !== 'N/A' ? resTimeSource : 'needs-data')}
+    ${sdeCard('Avg Resolution Time', avgResolutionTime !== 'N/A' ? avgResolutionTime + ' hrs' : 'N/A', avgResolutionTime !== 'N/A' ? resTimeSource : 'needs-data')}
     ${sdeCard('Avg Response Time', avgResponseTime !== 'N/A' ? avgResponseTime + ' hrs' : 'N/A', avgResponseSource)}
     ${sdeCard('Total Time Entered', totalTimeEntered + ' min', timeSource)}
     ${sdeCard('Open Tickets at EOD', avgOpenAtEOD !== 'N/A' ? avgOpenAtEOD + ' avg' : 'N/A', avgOpenAtEOD !== 'N/A' ? 'auto' : 'needs-data')}
