@@ -750,9 +750,10 @@ function renderTickets(tickets) {
     const readinessClass = t.automationReadiness || 'manual';
     const resourceName = getResourceName(t.assignedResourceID);
     const ai = t.aiInsights;
+    const catClass = 'cat-' + (t.category || 'general_support').toLowerCase().replace(/[\s\/]+/g, '_');
 
     return `
-      <div class="ticket-card ${t.isQuickHitter ? 'quick-hitter' : ''}" onclick="openTicketDetail('${t.ticketId}')">
+      <div class="ticket-card ${catClass} ${t.isQuickHitter ? 'quick-hitter' : ''}" onclick="openTicketDetail('${t.ticketId}')">
         <div class="ticket-header">
           <span class="ticket-title">${escHtml(t.title)}</span>
           <span class="ticket-id">#${t.ticketNumber || t.ticketId}</span>

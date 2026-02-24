@@ -4,12 +4,21 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>IntermixIT | Ticket Analyzer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header>
-    <h1><span class="brand-name">INTERMI<span class="brand-x">X</span>IT</span> Ticket Analyzer</h1>
-    <p class="subtitle">Run Faster, Safer, and Smarter with IT That Actually Works</p>
+    <div class="header-inner">
+      <div class="header-brand">
+        <h1><span class="brand-name">INTERMI<span class="brand-x">X</span>IT</span></h1>
+        <p class="subtitle">Run Faster, Safer, and Smarter with IT That Actually Works</p>
+      </div>
+      <div class="header-badge"><span class="header-badge-icon">&#9670;</span> Ticket Analyzer</div>
+    </div>
+    <div class="header-glow"></div>
   </header>
 
   <main>
@@ -104,23 +113,28 @@
 
     <!-- Summary Dashboard -->
     <section id="summary" class="summary hidden">
-      <div class="stat-card">
+      <div class="stat-card" style="--card-accent: var(--primary)">
+        <div class="stat-icon">&#9776;</div>
         <div class="stat-number" id="stat-total">0</div>
         <div class="stat-label">Total Tickets</div>
       </div>
-      <div class="stat-card highlight">
+      <div class="stat-card highlight" style="--card-accent: var(--green)">
+        <div class="stat-icon">&#9889;</div>
         <div class="stat-number" id="stat-quick">0</div>
         <div class="stat-label">Quick Hitters</div>
       </div>
-      <div class="stat-card">
+      <div class="stat-card" style="--card-accent: var(--cyan)">
+        <div class="stat-icon">&#9881;</div>
         <div class="stat-number" id="stat-automatable">0</div>
         <div class="stat-label">Automatable</div>
       </div>
-      <div class="stat-card">
+      <div class="stat-card" style="--card-accent: var(--accent)">
+        <div class="stat-icon">&#9202;</div>
         <div class="stat-number" id="stat-time-saved">0</div>
         <div class="stat-label">Est. Min Saved</div>
       </div>
-      <div class="stat-card">
+      <div class="stat-card" style="--card-accent: var(--purple)">
+        <div class="stat-icon">&#9733;</div>
         <div class="stat-number" id="stat-avg-score">0</div>
         <div class="stat-label">Avg Auto Score</div>
       </div>
@@ -355,6 +369,14 @@
       </div>
     </div>
   </main>
+
+  <footer class="app-footer">
+    <span class="footer-brand">IntermixIT</span>
+    <span class="footer-sep">&bull;</span>
+    <span>Ticket Analyzer</span>
+    <span class="footer-sep">&bull;</span>
+    <span class="footer-ai">AI-Powered</span>
+  </footer>
 
   <script src="app.js"></script>
 </body>
