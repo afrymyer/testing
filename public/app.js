@@ -8,6 +8,7 @@ let lastQueueDiagnostics = null; // server-side queue distribution data
 let aiEnabled = false; // whether AI is configured on the server
 let aiAnalyzed = false; // whether current tickets have been AI-analyzed
 let rawTicketsForAI = []; // raw ticket data needed for AI re-analysis
+let currentBatchInsights = null; // AI batch-level insights
 
 // ── DOM Elements ──
 const $ = (sel) => document.querySelector(sel);
@@ -374,10 +375,12 @@ async function runAIAnalysis() {
     const data = await res.json();
     allTickets = data.tickets;
     currentAnalytics = data.analytics;
+    currentBatchInsights = data.batchInsights || null;
     aiAnalyzed = true;
 
     renderSummary(data.summary);
     renderAnalytics(data.analytics, data.summary);
+    renderAIInsights(currentBatchInsights);
     applyFilters();
 
     const stats = data.aiStats || {};
@@ -587,6 +590,143 @@ function renderROI(roi) {
   `;
 }
 
+// ── Render AI Batch Insights ──
+function renderAIInsights(insights) {
+  const tabBtn = document.getElementById('tab-btn-ai-insights');
+
+  if (!insights) {
+    if (tabBtn) tabBtn.style.display = 'none';
+    return;
+  }
+
+  // Show the AI Insights tab button
+  if (tabBtn) tabBtn.style.display = '';
+
+  // Executive Summary
+  const execContainer = $('#ai-exec-summary');
+  if (insights.executiveSummary) {
+    execContainer.innerHTML = `
+      <div class="ai-exec-banner">
+        <div class="ai-exec-icon">AI</div>
+        <div class="ai-exec-content">
+          <h3>Executive Summary</h3>
+          <p>${escHtml(insights.executiveSummary)}</p>
+        </div>
+      </div>`;
+  } else {
+    execContainer.innerHTML = '';
+  }
+
+  // Systemic Issues
+  const issuesContainer = $('#ai-systemic-issues');
+  if (insights.systemicIssues && insights.systemicIssues.length > 0) {
+    issuesContainer.innerHTML = `
+      <h3>Systemic Issues Detected</h3>
+      <p class="panel-desc">Cross-ticket patterns that suggest underlying infrastructure or process problems</p>
+      <div class="ai-issues-list">
+        ${insights.systemicIssues.map(issue => `
+          <div class="ai-issue-card ai-severity-${issue.severity || 'medium'}">
+            <div class="ai-issue-header">
+              <span class="ai-issue-severity badge-severity-${issue.severity || 'medium'}">${(issue.severity || 'medium').toUpperCase()}</span>
+              <span class="ai-issue-title">${escHtml(issue.issue)}</span>
+            </div>
+            <p class="ai-issue-desc">${escHtml(issue.description)}</p>
+            ${issue.recommendation ? `<p class="ai-issue-rec"><strong>Action:</strong> ${escHtml(issue.recommendation)}</p>` : ''}
+            ${issue.affectedTickets && issue.affectedTickets.length > 0 ? `
+              <p class="ai-issue-tickets">Affected: ${issue.affectedTickets.map(id => `<code>${escHtml(String(id))}</code>`).join(' ')}</p>
+            ` : ''}
+          </div>
+        `).join('')}
+      </div>`;
+  } else {
+    issuesContainer.innerHTML = `
+      <h3>Systemic Issues</h3>
+      <p class="panel-desc">No systemic issues detected in this batch. This is a positive signal for infrastructure health.</p>`;
+  }
+
+  // Strategic Recommendations
+  const recsContainer = $('#ai-strategic-recs');
+  if (insights.strategicRecommendations && insights.strategicRecommendations.length > 0) {
+    recsContainer.innerHTML = `
+      <h3>Strategic Recommendations</h3>
+      <p class="panel-desc">AI-generated action items to improve operations</p>
+      <div class="ai-recs-grid">
+        ${insights.strategicRecommendations.map(rec => `
+          <div class="ai-rec-card">
+            <div class="ai-rec-header">
+              <span class="ai-rec-title">${escHtml(rec.title)}</span>
+              <div class="ai-rec-tags">
+                <span class="ai-rec-tag ai-rec-impact-${rec.impact || 'medium'}">${(rec.impact || 'medium')} impact</span>
+                <span class="ai-rec-tag ai-rec-effort-${rec.effort || 'medium'}">${(rec.effort || 'medium')} effort</span>
+                ${rec.category ? `<span class="ai-rec-tag ai-rec-cat">${rec.category}</span>` : ''}
+              </div>
+            </div>
+            <p class="ai-rec-desc">${escHtml(rec.description)}</p>
+          </div>
+        `).join('')}
+      </div>`;
+  } else {
+    recsContainer.innerHTML = '';
+  }
+
+  // Workload Insights
+  const workloadContainer = $('#ai-workload-insights');
+  const wl = insights.workloadInsights;
+  if (wl && (wl.volumeAssessment || wl.capacityRisk)) {
+    const capacityColorMap = { healthy: 'green', at_risk: 'yellow', overloaded: 'red' };
+    const capacityColor = capacityColorMap[wl.capacityRisk] || 'text-dim';
+    workloadContainer.innerHTML = `
+      <h3>Workload Analysis</h3>
+      <div class="ai-workload-grid">
+        ${wl.capacityRisk ? `
+          <div class="ai-workload-card ai-capacity-${wl.capacityRisk}">
+            <div class="ai-workload-label">Team Capacity</div>
+            <div class="ai-workload-value" style="color: var(--${capacityColor})">${(wl.capacityRisk || 'unknown').replace('_', ' ').toUpperCase()}</div>
+            ${wl.capacityNote ? `<div class="ai-workload-note">${escHtml(wl.capacityNote)}</div>` : ''}
+          </div>
+        ` : ''}
+        ${wl.volumeAssessment ? `
+          <div class="ai-workload-card">
+            <div class="ai-workload-label">Volume Assessment</div>
+            <div class="ai-workload-note">${escHtml(wl.volumeAssessment)}</div>
+          </div>
+        ` : ''}
+        ${wl.peakPatterns ? `
+          <div class="ai-workload-card">
+            <div class="ai-workload-label">Peak Patterns</div>
+            <div class="ai-workload-note">${escHtml(wl.peakPatterns)}</div>
+          </div>
+        ` : ''}
+      </div>`;
+  } else {
+    workloadContainer.innerHTML = '';
+  }
+
+  // Automation Opportunities
+  const autoContainer = $('#ai-auto-opportunities');
+  if (insights.automationOpportunities && insights.automationOpportunities.length > 0) {
+    autoContainer.innerHTML = `
+      <h3>Automation Opportunities</h3>
+      <p class="panel-desc">High-impact automation targets identified by AI analysis</p>
+      <div class="ai-auto-list">
+        ${insights.automationOpportunities.map(opp => `
+          <div class="ai-auto-card">
+            <div class="ai-auto-header">
+              <span class="ai-auto-title">${escHtml(opp.opportunity)}</span>
+              ${opp.estimatedTimeSaved ? `<span class="ai-auto-time">${opp.estimatedTimeSaved} min/mo saved</span>` : ''}
+            </div>
+            <p class="ai-auto-desc">${escHtml(opp.description)}</p>
+            ${opp.ticketTypes && opp.ticketTypes.length > 0 ? `
+              <div class="ai-auto-types">Affects: ${opp.ticketTypes.map(t => `<span class="badge badge-category">${escHtml(t)}</span>`).join(' ')}</div>
+            ` : ''}
+          </div>
+        `).join('')}
+      </div>`;
+  } else {
+    autoContainer.innerHTML = '';
+  }
+}
+
 // ── Render Tickets ──
 function renderTickets(tickets) {
   if (!tickets.length) {
@@ -620,6 +760,7 @@ function renderTickets(tickets) {
         <div class="ticket-meta">
           <span class="badge badge-category">${t.categoryLabel}</span>
           ${ai ? '<span class="badge badge-ai">AI</span>' : ''}
+          ${ai && ai.sentiment ? `<span class="badge badge-sentiment badge-sentiment-${ai.sentiment.level}" title="Urgency: ${ai.sentiment.urgency}/5">${ai.sentiment.level}</span>` : ''}
           ${ai && ai.categoryChanged ? `<span class="badge badge-ai-reclassified" title="AI reclassified from ${escHtml(ai.originalCategory)}">Reclassified</span>` : ''}
           ${ai && ai.escalation ? '<span class="badge badge-escalate">Escalate</span>' : ''}
           <span class="badge badge-readiness badge-readiness-${readinessClass}">${t.automationReadinessLabel || 'Manual'}</span>
@@ -929,6 +1070,22 @@ function openTicketDetail(ticketId) {
             <div class="ai-field">
               <div class="ai-field-label">AI-Recommended Scripts</div>
               <p>${t.aiInsights.recommendedScripts.map(s => `<code>${escHtml(s)}</code>`).join(' ')}</p>
+            </div>
+          ` : ''}
+          ${t.aiInsights.sentiment ? `
+            <div class="ai-field ai-sentiment-field">
+              <div class="ai-field-label">User Sentiment</div>
+              <div class="ai-sentiment-detail">
+                <span class="badge badge-sentiment badge-sentiment-${t.aiInsights.sentiment.level}">${t.aiInsights.sentiment.level}</span>
+                <span class="ai-urgency-bar">
+                  Urgency:
+                  ${[1,2,3,4,5].map(n => `<span class="ai-urgency-dot ${n <= t.aiInsights.sentiment.urgency ? 'ai-urgency-active' : ''}"></span>`).join('')}
+                  <span class="ai-urgency-num">${t.aiInsights.sentiment.urgency}/5</span>
+                </span>
+              </div>
+              ${t.aiInsights.sentiment.cues && t.aiInsights.sentiment.cues.length ? `
+                <p class="ai-sentiment-cues">Cues: ${t.aiInsights.sentiment.cues.map(c => `<em>"${escHtml(c)}"</em>`).join(', ')}</p>
+              ` : ''}
             </div>
           ` : ''}
           ${t.aiInsights.reasoning ? `

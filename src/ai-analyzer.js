@@ -58,6 +58,10 @@ For each ticket, provide:
 6. recommendedScripts: array of script filenames from the available list that would help (empty if none apply)
 7. escalation: boolean — should this be escalated rather than handled at L1?
 8. reasoning: 1-2 sentence explanation of your analysis
+9. sentiment: object with:
+   - level: "frustrated" | "urgent" | "neutral" | "patient" — the user's emotional tone
+   - urgency: 1-5 scale (5 = most urgent) based on language cues, not just priority field
+   - cues: array of 1-3 short phrases from the ticket that signal the sentiment (e.g. "tried multiple times", "been waiting all day", "when you get a chance")
 
 Be specific and practical. A password reset is different from an MFA enrollment issue. A slow computer from uptime is different from a slow computer from malware. Use the ticket details to make precise assessments, not just surface-level keyword matches.
 
@@ -130,6 +134,7 @@ async function analyzeBatch(anthropic, tickets) {
         aiRecommendedScripts: Array.isArray(ai.recommendedScripts) ? ai.recommendedScripts : [],
         aiEscalation: !!ai.escalation,
         aiReasoning: ai.reasoning || '',
+        aiSentiment: ai.sentiment || null,
       };
     });
   } catch (parseErr) {
@@ -198,6 +203,7 @@ function mergeAIResults(analyzedTickets, aiResults) {
         recommendedScripts: ai.aiRecommendedScripts,
         escalation: ai.aiEscalation,
         reasoning: ai.aiReasoning,
+        sentiment: ai.aiSentiment,
         categoryChanged,
         originalCategory: categoryChanged ? ticket.categoryLabel : null,
       },
@@ -209,8 +215,131 @@ function mergeAIResults(analyzedTickets, aiResults) {
   });
 }
 
+/**
+ * Generate batch-level AI insights that look across ALL tickets for patterns,
+ * systemic issues, strategic recommendations, and workload predictions.
+ */
+async function generateBatchInsights(tickets, analyzedTickets) {
+  const anthropic = getClient();
+  if (!anthropic) {
+    throw new Error('Anthropic API key not configured');
+  }
+
+  // Build a condensed summary of the ticket batch for the AI
+  const categoryCount = {};
+  const priorityCount = {};
+  let totalAutoScore = 0;
+  let escalationCount = 0;
+  const descriptions = [];
+
+  for (const t of analyzedTickets) {
+    const cat = t.aiInsights?.categoryLabel || t.categoryLabel || 'Unknown';
+    categoryCount[cat] = (categoryCount[cat] || 0) + 1;
+
+    const pri = t.priority || 'Unknown';
+    priorityCount[pri] = (priorityCount[pri] || 0) + 1;
+
+    totalAutoScore += t.automationScore || 0;
+    if (t.aiInsights?.escalation) escalationCount++;
+
+    // Include a brief of each ticket for pattern detection
+    descriptions.push({
+      id: t.ticketNumber || t.ticketId,
+      title: t.title || '',
+      category: cat,
+      priority: pri,
+      automationScore: t.automationScore,
+      rootCause: t.aiInsights?.rootCause || '',
+      escalation: t.aiInsights?.escalation || false,
+      createDate: t.createDate || null,
+    });
+  }
+
+  const avgAutoScore = analyzedTickets.length > 0
+    ? Math.round(totalAutoScore / analyzedTickets.length)
+    : 0;
+
+  const systemPrompt = `You are a senior MSP operations strategist analyzing a batch of IT support tickets. Your job is to identify patterns, systemic issues, and strategic opportunities that individual ticket analysis would miss.
+
+You have deep knowledge of MSP operations, SLA management, technician efficiency, and IT infrastructure health indicators.
+
+Respond with a JSON object (no markdown wrapping) containing:
+
+1. "executiveSummary": A 2-4 sentence executive summary suitable for an MSP manager. Highlight the most important finding, the overall health of the ticket queue, and one key action item.
+
+2. "systemicIssues": An array of 0-5 objects, each with:
+   - "issue": Short title of the systemic issue
+   - "description": 1-2 sentence explanation
+   - "affectedTickets": Array of ticket IDs that are related
+   - "severity": "critical" | "high" | "medium" | "low"
+   - "recommendation": Specific action to resolve the root cause
+
+3. "strategicRecommendations": An array of 3-5 objects, each with:
+   - "title": Short actionable title
+   - "description": 1-3 sentence explanation of the recommendation
+   - "impact": "high" | "medium" | "low"
+   - "effort": "low" | "medium" | "high"
+   - "category": "automation" | "process" | "training" | "infrastructure" | "staffing"
+
+4. "workloadInsights": An object with:
+   - "volumeAssessment": 1-2 sentence assessment of ticket volume and distribution
+   - "peakPatterns": Any time-based patterns noticed (day of week, time of day, etc.)
+   - "capacityRisk": "healthy" | "at_risk" | "overloaded" — assessment of team capacity
+   - "capacityNote": 1 sentence explanation
+
+5. "automationOpportunities": An array of 2-4 objects, each with:
+   - "opportunity": Short title
+   - "description": How to implement this automation
+   - "estimatedTimeSaved": Estimated minutes saved per month
+   - "ticketTypes": Which ticket categories this would affect
+
+Be specific, data-driven, and practical. Reference actual ticket IDs and categories from the data. Don't be generic — tailor every insight to what you see in THIS specific batch.`;
+
+  const userMessage = `Analyze this batch of ${analyzedTickets.length} MSP tickets for cross-cutting patterns and strategic insights.
+
+BATCH SUMMARY:
+- Total tickets: ${analyzedTickets.length}
+- Category distribution: ${JSON.stringify(categoryCount)}
+- Priority distribution: ${JSON.stringify(priorityCount)}
+- Average automation score: ${avgAutoScore}%
+- Escalation flags: ${escalationCount}
+
+INDIVIDUAL TICKETS:
+${JSON.stringify(descriptions, null, 2)}`;
+
+  const response = await anthropic.messages.create({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 4096,
+    system: systemPrompt,
+    messages: [{ role: 'user', content: userMessage }],
+  });
+
+  const text = response.content[0].text.trim();
+
+  try {
+    const parsed = JSON.parse(text);
+    return {
+      executiveSummary: parsed.executiveSummary || '',
+      systemicIssues: Array.isArray(parsed.systemicIssues) ? parsed.systemicIssues : [],
+      strategicRecommendations: Array.isArray(parsed.strategicRecommendations) ? parsed.strategicRecommendations : [],
+      workloadInsights: parsed.workloadInsights || {},
+      automationOpportunities: Array.isArray(parsed.automationOpportunities) ? parsed.automationOpportunities : [],
+    };
+  } catch (parseErr) {
+    console.error('[AI] Failed to parse batch insights:', parseErr.message);
+    console.error('[AI] Raw response:', text.slice(0, 500));
+    return {
+      executiveSummary: 'AI batch analysis could not be parsed. Individual ticket insights are still available.',
+      systemicIssues: [],
+      strategicRecommendations: [],
+      workloadInsights: {},
+      automationOpportunities: [],
+    };
+  }
+}
+
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
-module.exports = { analyzeWithAI, mergeAIResults, isConfigured };
+module.exports = { analyzeWithAI, mergeAIResults, generateBatchInsights, isConfigured };

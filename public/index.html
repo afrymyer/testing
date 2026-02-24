@@ -136,6 +136,7 @@
         <button class="tab-btn" data-tab="tab-roi">ROI Projection</button>
         <button class="tab-btn" data-tab="tab-quickwins">Quick Wins</button>
         <button class="tab-btn" data-tab="tab-sde-metrics">SDE Metrics</button>
+        <button class="tab-btn" data-tab="tab-ai-insights" id="tab-btn-ai-insights" style="display:none;">AI Insights</button>
       </div>
 
       <!-- Tab: Category Breakdown -->
@@ -268,6 +269,15 @@
           <h3>Quality &amp; SLA</h3>
           <div id="sde-quality-grid" class="sde-metrics-grid"></div>
         </div>
+      </div>
+
+      <!-- Tab: AI Insights (shown after AI analysis) -->
+      <div id="tab-ai-insights" class="tab-panel">
+        <div class="panel-card ai-insights-exec" id="ai-exec-summary"></div>
+        <div class="panel-card" id="ai-systemic-issues"></div>
+        <div class="panel-card" id="ai-strategic-recs"></div>
+        <div class="panel-card" id="ai-workload-insights"></div>
+        <div class="panel-card" id="ai-auto-opportunities"></div>
       </div>
 
       <!-- Tab: Quick Wins -->

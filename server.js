@@ -4,7 +4,7 @@ const path = require('path');
 const AutotaskClient = require('./src/autotask-client');
 const { analyzeTickets, getSummary, getDeepAnalytics, CATEGORY_PATTERNS } = require('./src/ticket-analyzer');
 const { loadScript, listScripts } = require('./src/script-mapper');
-const { analyzeWithAI, mergeAIResults, isConfigured: isAIConfigured } = require('./src/ai-analyzer');
+const { analyzeWithAI, mergeAIResults, generateBatchInsights, isConfigured: isAIConfigured } = require('./src/ai-analyzer');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -258,6 +258,15 @@ app.post('/api/ai-analyze', async (req, res) => {
     const summary = getSummary(merged);
     const analytics = getDeepAnalytics(merged, tickets);
 
+    // Generate batch-level strategic insights
+    let batchInsights = null;
+    try {
+      console.log(`[AI] Generating batch-level insights...`);
+      batchInsights = await generateBatchInsights(tickets, merged);
+    } catch (batchErr) {
+      console.warn(`[AI] Batch insights failed (non-fatal): ${batchErr.message}`);
+    }
+
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     const aiEnhanced = merged.filter((t) => t.aiInsights).length;
     const categoryChanges = merged.filter((t) => t.aiInsights && t.aiInsights.categoryChanged).length;
@@ -267,6 +276,7 @@ app.post('/api/ai-analyze', async (req, res) => {
       tickets: merged,
       summary,
       analytics,
+      batchInsights,
       aiStats: {
         enhanced: aiEnhanced,
         categoryChanges,
