@@ -4,6 +4,7 @@ const path = require('path');
 const AutotaskClient = require('./src/autotask-client');
 const { analyzeTickets, getSummary, getDeepAnalytics, CATEGORY_PATTERNS } = require('./src/ticket-analyzer');
 const { loadScript, listScripts } = require('./src/script-mapper');
+const { analyzeWithAI, mergeAIResults, isConfigured: isAIConfigured } = require('./src/ai-analyzer');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -30,6 +31,7 @@ if (process.env.AUTOTASK_API_USER && process.env.AUTOTASK_API_SECRET) {
 app.get('/api/status', (req, res) => {
   res.json({
     autotaskConfigured: !!autotaskClient,
+    aiConfigured: isAIConfigured(),
     serverTime: new Date().toISOString(),
     scriptCounts: listScripts(),
   });
@@ -223,7 +225,62 @@ app.get('/api/resources', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/ai-analyze - Run AI analysis on already-analyzed tickets
+ * Expects { tickets: [...] } where tickets are the raw ticket objects
+ * Returns AI-enhanced analyzed tickets
+ */
+app.post('/api/ai-analyze', async (req, res) => {
+  try {
+    if (!isAIConfigured()) {
+      return res.status(503).json({
+        error: 'AI not configured. Set ANTHROPIC_API_KEY in .env file.',
+      });
+    }
+
+    const { tickets } = req.body;
+    if (!Array.isArray(tickets) || tickets.length === 0) {
+      return res.status(400).json({ error: 'tickets must be a non-empty array' });
+    }
+
+    console.log(`[AI] Starting AI analysis of ${tickets.length} tickets...`);
+    const startTime = Date.now();
+
+    // Run keyword analysis first
+    const keywordAnalyzed = analyzeTickets(tickets);
+
+    // Run AI analysis
+    const aiResults = await analyzeWithAI(tickets);
+
+    // Merge AI results into keyword-analyzed tickets
+    const merged = mergeAIResults(keywordAnalyzed, aiResults);
+
+    const summary = getSummary(merged);
+    const analytics = getDeepAnalytics(merged, tickets);
+
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    const aiEnhanced = merged.filter((t) => t.aiInsights).length;
+    const categoryChanges = merged.filter((t) => t.aiInsights && t.aiInsights.categoryChanged).length;
+    console.log(`[AI] Analysis complete in ${elapsed}s. ${aiEnhanced} tickets enhanced, ${categoryChanges} categories changed.`);
+
+    res.json({
+      tickets: merged,
+      summary,
+      analytics,
+      aiStats: {
+        enhanced: aiEnhanced,
+        categoryChanges,
+        elapsedSeconds: parseFloat(elapsed),
+      },
+    });
+  } catch (err) {
+    console.error('[AI] Analysis failed:', err.message);
+    res.status(500).json({ error: `AI analysis failed: ${err.message}` });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`IntermixIT Ticket Analyzer running on http://localhost:${PORT}`);
   console.log(`Autotask API: ${autotaskClient ? 'Configured' : 'Not configured (demo mode)'}`);
+  console.log(`AI Analysis: ${isAIConfigured() ? 'Configured (Claude)' : 'Not configured — set ANTHROPIC_API_KEY for AI features'}`);
 });

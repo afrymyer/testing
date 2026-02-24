@@ -1687,6 +1687,124 @@ main {
   color: var(--yellow);
 }
 
+/* ── AI Features ── */
+.btn-ai {
+  background: linear-gradient(135deg, #8b5cf6, #6d28d9);
+  color: #fff;
+  border: none;
+  font-weight: 600;
+  transition: opacity 0.2s, transform 0.1s;
+}
+.btn-ai:hover { opacity: 0.9; transform: translateY(-1px); }
+.btn-ai:disabled { opacity: 0.5; cursor: wait; }
+
+.status-bar.ai-active {
+  background: rgba(139, 92, 246, 0.15);
+  border-color: rgba(139, 92, 246, 0.4);
+  color: #c4b5fd;
+}
+
+.badge-ai {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.25), rgba(109, 40, 217, 0.25));
+  color: #c4b5fd;
+  font-weight: 600;
+  font-size: 0.65rem;
+  letter-spacing: 0.05em;
+}
+
+.badge-ai-reclassified {
+  background: rgba(251, 191, 36, 0.15);
+  color: var(--yellow);
+  font-size: 0.7rem;
+}
+
+.badge-escalate {
+  background: rgba(239, 68, 68, 0.2);
+  color: #fca5a5;
+  font-weight: 600;
+}
+
+.ticket-ai-resolution {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  padding: 0.35rem 0.75rem;
+  border-left: 2px solid rgba(139, 92, 246, 0.4);
+  margin: 0.25rem 0;
+  line-height: 1.4;
+}
+
+/* AI section in ticket detail modal */
+.detail-ai-section {
+  background: rgba(139, 92, 246, 0.06);
+  border: 1px solid rgba(139, 92, 246, 0.2);
+  border-radius: 8px;
+  padding: 1rem;
+  margin-top: 0.75rem;
+}
+
+.detail-ai-section h4 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.ai-confidence-label {
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+
+.ai-reclassified-note {
+  background: rgba(251, 191, 36, 0.1);
+  border-left: 3px solid var(--yellow);
+  padding: 0.4rem 0.75rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.85rem;
+  border-radius: 0 4px 4px 0;
+}
+
+.ai-field {
+  margin-bottom: 0.6rem;
+}
+
+.ai-field-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #c4b5fd;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.2rem;
+}
+
+.ai-field p {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.ai-field code {
+  background: rgba(139, 92, 246, 0.15);
+  padding: 0.15rem 0.4rem;
+  border-radius: 3px;
+  font-size: 0.8rem;
+}
+
+.ai-reasoning {
+  opacity: 0.8;
+  font-style: italic;
+}
+
+.ai-escalation-warning {
+  background: rgba(239, 68, 68, 0.12);
+  border-left: 3px solid #ef4444;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.6rem;
+  font-size: 0.85rem;
+  border-radius: 0 4px 4px 0;
+  color: #fca5a5;
+}
+
 @media (max-width: 768px) {
   .controls-row { flex-direction: column; align-items: stretch; }
   .controls-filters { gap: 0.5rem; }

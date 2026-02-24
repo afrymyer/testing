@@ -5,6 +5,9 @@ let currentScript = null;
 let allResources = []; // { id, name, email }
 let selectedTechnicians = []; // resource IDs
 let lastQueueDiagnostics = null; // server-side queue distribution data
+let aiEnabled = false; // whether AI is configured on the server
+let aiAnalyzed = false; // whether current tickets have been AI-analyzed
+let rawTicketsForAI = []; // raw ticket data needed for AI re-analysis
 
 // ── DOM Elements ──
 const $ = (sel) => document.querySelector(sel);
@@ -100,6 +103,11 @@ async function init() {
   try {
     const res = await fetch('/api/status');
     const data = await res.json();
+
+    if (data.aiConfigured) {
+      aiEnabled = true;
+      $('#btn-ai').classList.remove('hidden');
+    }
 
     if (data.autotaskConfigured) {
       statusBar.className = 'status-bar connected';
@@ -278,6 +286,17 @@ async function fetchTickets() {
     allTickets = data.tickets;
     currentAnalytics = data.analytics;
     lastQueueDiagnostics = data.queueDiagnostics || null;
+    aiAnalyzed = false;
+    // Store raw enriched tickets for potential AI re-analysis
+    rawTicketsForAI = data._rawTickets || allTickets.map(t => ({
+      id: t.ticketId, ticketNumber: t.ticketNumber, title: t.title,
+      description: t.description, resolution: t.resolution, status: t.status,
+      priority: t.priority, queueID: t.queueID, createDate: t.createDate,
+      assignedResourceID: t.assignedResourceID, workedHours: t.workedHours,
+      firstResponseDateTime: t.firstResponseDateTime,
+      resolutionPlanDateTime: t.resolutionPlanDateTime,
+      resolvedDateTime: t.resolvedDateTime,
+    }));
 
     renderSummary(data.summary);
     renderAnalytics(data.analytics, data.summary);
@@ -286,7 +305,8 @@ async function fetchTickets() {
     statusBar.className = 'status-bar connected';
     const queueLabel = selectedQueues.length > 0 ? ` in ${selectedQueues.length} queue${selectedQueues.length > 1 ? 's' : ''}` : '';
     const timeLabel = from ? ` (${from} to ${to})` : '';
-    statusText.textContent = `Loaded ${allTickets.length} tickets${queueLabel}${timeLabel}. ${data.summary.quickHitterCount} quick hitters found.`;
+    const aiHint = aiEnabled ? ' Click "AI Analyze" for deeper insights.' : '';
+    statusText.textContent = `Loaded ${allTickets.length} tickets${queueLabel}${timeLabel}. ${data.summary.quickHitterCount} quick hitters found.${aiHint}`;
   } catch (err) {
     statusBar.className = 'status-bar error';
     statusText.textContent = `Error: ${err.message}`;
@@ -305,16 +325,70 @@ async function loadDemo() {
     const data = await res.json();
     allTickets = data.tickets;
     currentAnalytics = data.analytics;
+    aiAnalyzed = false;
+    rawTicketsForAI = DEMO_TICKETS;
 
     renderSummary(data.summary);
     renderAnalytics(data.analytics, data.summary);
     applyFilters();
 
     statusBar.className = 'status-bar demo';
-    statusText.textContent = `Demo: ${allTickets.length} tickets analyzed. ${data.summary.quickHitterCount} quick hitters identified.`;
+    const aiHint = aiEnabled ? ' Click "AI Analyze" for deeper insights.' : '';
+    statusText.textContent = `Demo: ${allTickets.length} tickets analyzed. ${data.summary.quickHitterCount} quick hitters identified.${aiHint}`;
   } catch (err) {
     statusBar.className = 'status-bar error';
     statusText.textContent = `Error: ${err.message}`;
+  }
+}
+
+// ── AI Analysis ──
+async function runAIAnalysis() {
+  if (!aiEnabled) {
+    showToast('AI not configured on server');
+    return;
+  }
+
+  const ticketsToAnalyze = rawTicketsForAI.length > 0 ? rawTicketsForAI : DEMO_TICKETS;
+  if (ticketsToAnalyze.length === 0) {
+    showToast('Load tickets first, then run AI analysis');
+    return;
+  }
+
+  const btn = $('#btn-ai');
+  btn.disabled = true;
+  btn.textContent = 'Analyzing...';
+  statusText.innerHTML = '<span class="loading-spinner"></span>Running Claude AI analysis on ' + ticketsToAnalyze.length + ' tickets...';
+
+  try {
+    const res = await fetch('/api/ai-analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tickets: ticketsToAnalyze }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error);
+    }
+
+    const data = await res.json();
+    allTickets = data.tickets;
+    currentAnalytics = data.analytics;
+    aiAnalyzed = true;
+
+    renderSummary(data.summary);
+    renderAnalytics(data.analytics, data.summary);
+    applyFilters();
+
+    const stats = data.aiStats || {};
+    statusBar.className = 'status-bar ai-active';
+    statusText.textContent = `AI Analysis complete (${stats.elapsedSeconds || '?'}s). ${stats.enhanced || 0} tickets enhanced, ${stats.categoryChanges || 0} categories reclassified by AI.`;
+    btn.textContent = 'Re-Analyze with AI';
+  } catch (err) {
+    statusBar.className = 'status-bar error';
+    statusText.textContent = `AI Error: ${err.message}`;
+  } finally {
+    btn.disabled = false;
   }
 }
 
@@ -535,6 +609,7 @@ function renderTickets(tickets) {
 
     const readinessClass = t.automationReadiness || 'manual';
     const resourceName = getResourceName(t.assignedResourceID);
+    const ai = t.aiInsights;
 
     return `
       <div class="ticket-card ${t.isQuickHitter ? 'quick-hitter' : ''}" onclick="openTicketDetail('${t.ticketId}')">
@@ -544,6 +619,9 @@ function renderTickets(tickets) {
         </div>
         <div class="ticket-meta">
           <span class="badge badge-category">${t.categoryLabel}</span>
+          ${ai ? '<span class="badge badge-ai">AI</span>' : ''}
+          ${ai && ai.categoryChanged ? `<span class="badge badge-ai-reclassified" title="AI reclassified from ${escHtml(ai.originalCategory)}">Reclassified</span>` : ''}
+          ${ai && ai.escalation ? '<span class="badge badge-escalate">Escalate</span>' : ''}
           <span class="badge badge-readiness badge-readiness-${readinessClass}">${t.automationReadinessLabel || 'Manual'}</span>
           ${t.isQuickHitter ? '<span class="badge badge-quick">Quick Hitter</span>' : ''}
           ${t.estimatedMinutes ? `<span class="badge badge-time">~${t.estimatedMinutes} min</span>` : ''}
@@ -558,6 +636,7 @@ function renderTickets(tickets) {
             ${t.automationScore}%
           </div>
         </div>
+        ${ai && ai.suggestedResolution ? `<div class="ticket-ai-resolution">${escHtml(ai.suggestedResolution)}</div>` : ''}
         ${scripts ? `<div class="ticket-scripts">${scripts}</div>` : ''}
       </div>`;
   }).join('');
@@ -822,6 +901,42 @@ function openTicketDetail(ticketId) {
               </div>
             `).join('')}
           </div>
+        </div>
+      ` : ''}
+
+      ${t.aiInsights ? `
+        <div class="detail-section detail-ai-section">
+          <h4>AI Analysis <span class="badge badge-ai">Claude</span> <span class="ai-confidence-label">${t.aiInsights.confidence}% confidence</span></h4>
+          ${t.aiInsights.categoryChanged ? `<p class="ai-reclassified-note">AI reclassified this ticket from <strong>${escHtml(t.aiInsights.originalCategory)}</strong> to <strong>${escHtml(t.aiInsights.categoryLabel)}</strong></p>` : ''}
+          ${t.aiInsights.suggestedResolution ? `
+            <div class="ai-field">
+              <div class="ai-field-label">Suggested Resolution</div>
+              <p>${escHtml(t.aiInsights.suggestedResolution)}</p>
+            </div>
+          ` : ''}
+          ${t.aiInsights.rootCause ? `
+            <div class="ai-field">
+              <div class="ai-field-label">Likely Root Cause</div>
+              <p>${escHtml(t.aiInsights.rootCause)}</p>
+            </div>
+          ` : ''}
+          ${t.aiInsights.escalation ? `
+            <div class="ai-escalation-warning">
+              <strong>Escalation Recommended</strong> — AI suggests this ticket needs L2/L3 attention.
+            </div>
+          ` : ''}
+          ${t.aiInsights.recommendedScripts && t.aiInsights.recommendedScripts.length ? `
+            <div class="ai-field">
+              <div class="ai-field-label">AI-Recommended Scripts</div>
+              <p>${t.aiInsights.recommendedScripts.map(s => `<code>${escHtml(s)}</code>`).join(' ')}</p>
+            </div>
+          ` : ''}
+          ${t.aiInsights.reasoning ? `
+            <div class="ai-field ai-reasoning">
+              <div class="ai-field-label">Reasoning</div>
+              <p>${escHtml(t.aiInsights.reasoning)}</p>
+            </div>
+          ` : ''}
         </div>
       ` : ''}
 
@@ -1448,6 +1563,7 @@ function escHtml(str) {
 // ── Event Listeners ──
 $('#btn-fetch').addEventListener('click', fetchTickets);
 $('#btn-demo').addEventListener('click', loadDemo);
+$('#btn-ai').addEventListener('click', runAIAnalysis);
 $('#btn-scripts').addEventListener('click', browseScripts);
 $('#modal-close').addEventListener('click', closeScriptModal);
 $('#btn-copy-script').addEventListener('click', copyScript);
