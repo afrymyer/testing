@@ -3,9 +3,9 @@
 
 :root {
   --bg: #06080f;
-  --bg-mesh-1: #0c1a2e;
-  --bg-mesh-2: #150d28;
-  --bg-mesh-3: #0a1a1a;
+  --bg-mesh-1: rgba(122, 193, 67, 0.06);
+  --bg-mesh-2: rgba(139, 92, 246, 0.06);
+  --bg-mesh-3: rgba(34, 211, 238, 0.04);
   --surface: rgba(16, 20, 32, 0.85);
   --surface-solid: #10141f;
   --surface-2: rgba(24, 29, 46, 0.9);
@@ -88,9 +88,10 @@ header::after {
   bottom: 0;
   left: 0;
   right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, var(--primary), var(--accent), var(--primary), transparent);
+  height: 3px;
+  background: linear-gradient(90deg, transparent 5%, var(--primary), var(--accent), var(--ai-purple), var(--cyan), var(--primary), transparent 95%);
   opacity: 1;
+  box-shadow: 0 0 15px rgba(122, 193, 67, 0.3), 0 0 30px rgba(122, 193, 67, 0.1);
 }
 
 .header-inner {
@@ -109,15 +110,21 @@ header::after {
 }
 
 .brand-name {
-  color: var(--primary);
+  background: linear-gradient(135deg, var(--primary) 0%, #a0e86c 40%, var(--primary) 80%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
   font-weight: 900;
   letter-spacing: 0.06em;
-  text-shadow: 0 0 30px rgba(122, 193, 67, 0.4), 0 0 60px rgba(122, 193, 67, 0.15);
+  filter: drop-shadow(0 0 25px rgba(122, 193, 67, 0.35));
 }
 
 .brand-x {
-  color: var(--accent);
-  text-shadow: 0 0 20px rgba(245, 197, 24, 0.5);
+  background: linear-gradient(135deg, var(--accent), #ffe066);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  filter: drop-shadow(0 0 15px rgba(245, 197, 24, 0.45));
 }
 
 .subtitle {
@@ -149,13 +156,19 @@ header::after {
 
 .header-glow {
   position: absolute;
-  bottom: -40px;
+  bottom: -60px;
   left: 50%;
   transform: translateX(-50%);
-  width: 60%;
-  height: 40px;
-  background: radial-gradient(ellipse at center, rgba(122, 193, 67, 0.08), transparent 70%);
+  width: 80%;
+  height: 80px;
+  background: radial-gradient(ellipse at center, rgba(122, 193, 67, 0.12), rgba(245, 197, 24, 0.04) 40%, transparent 70%);
   pointer-events: none;
+  animation: glowPulse 4s ease-in-out infinite alternate;
+}
+
+@keyframes glowPulse {
+  0% { opacity: 0.6; }
+  100% { opacity: 1; }
 }
 
 main {
