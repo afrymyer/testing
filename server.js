@@ -152,8 +152,9 @@ app.get('/api/tickets', async (req, res) => {
 
     const priorityMap = await getPriorityMap();
     const analyzed = analyzeTickets(filteredTickets);
-    const summary = getSummary(analyzed);
-    const analytics = getDeepAnalytics(analyzed, filteredTickets, { priorityMap });
+    const categorized = analyzed.filter(t => t.category !== 'uncategorized');
+    const summary = getSummary(categorized);
+    const analytics = getDeepAnalytics(categorized, filteredTickets, { priorityMap });
 
     res.json({ tickets: analyzed, summary, analytics, queueDiagnostics: queueDist, priorityMap });
   } catch (err) {
@@ -173,8 +174,9 @@ app.post('/api/analyze', (req, res) => {
   }
 
   const analyzed = analyzeTickets(tickets);
-  const summary = getSummary(analyzed);
-  const analytics = getDeepAnalytics(analyzed, tickets);
+  const categorized = analyzed.filter(t => t.category !== 'uncategorized');
+  const summary = getSummary(categorized);
+  const analytics = getDeepAnalytics(categorized, tickets);
 
   res.json({ tickets: analyzed, summary, analytics });
 });
@@ -304,8 +306,9 @@ app.post('/api/ai-analyze', async (req, res) => {
     const merged = mergeAIResults(keywordAnalyzed, aiResults);
 
     const priorityMap = await getPriorityMap();
-    const summary = getSummary(merged);
-    const analytics = getDeepAnalytics(merged, tickets, { priorityMap });
+    const categorized = merged.filter(t => t.category !== 'uncategorized');
+    const summary = getSummary(categorized);
+    const analytics = getDeepAnalytics(categorized, tickets, { priorityMap });
 
     // Generate batch-level strategic insights (with overall timeout guard)
     let batchInsights = null;
@@ -316,7 +319,7 @@ app.post('/api/ai-analyze', async (req, res) => {
         setTimeout(() => reject(new Error('Batch insights overall timeout (5 min)')), 300000)
       );
       batchInsights = await Promise.race([
-        generateBatchInsights(tickets, merged, (progress) => {
+        generateBatchInsights(tickets, categorized, (progress) => {
           sendProgress({
             type: 'progress',
             phase: 'insights',
