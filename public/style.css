@@ -1827,6 +1827,15 @@ main {
   color: var(--purple);
 }
 
+/* === Dropdown Error === */
+.dropdown-error {
+  padding: 0.5rem 0.75rem;
+  color: var(--red);
+  font-size: 0.8rem;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
 /* === Error Detail === */
 .error-detail {
   line-height: 1.6;

@@ -152,7 +152,14 @@ function isReactiveQueue(queueID) {
 async function loadQueues() {
   try {
     const res = await fetch('/api/queues');
-    if (!res.ok) return;
+    if (!res.ok) {
+      let errMsg = `HTTP ${res.status}`;
+      try { const d = await res.json(); errMsg = d.error || errMsg; } catch {}
+      console.error('[Queues] Failed to load:', errMsg);
+      const container = $('#queue-options');
+      container.innerHTML = `<div class="dropdown-error">Failed to load queues: ${escHtml(errMsg)}</div>`;
+      return;
+    }
     const queues = await res.json();
     allQueues = queues;
     const container = $('#queue-options');
@@ -165,8 +172,10 @@ async function loadQueues() {
       label.querySelector('input').addEventListener('change', updateQueueSelection);
       container.appendChild(label);
     }
-  } catch {
-    // Silently fail - queue selection stays at "All Queues"
+  } catch (err) {
+    console.error('[Queues] Failed to load:', err);
+    const container = $('#queue-options');
+    container.innerHTML = `<div class="dropdown-error">Failed to load queues: ${escHtml(err.message)}</div>`;
   }
 }
 
@@ -205,7 +214,14 @@ function setupQueueDropdown() {
 async function loadResources() {
   try {
     const res = await fetch('/api/resources');
-    if (!res.ok) return;
+    if (!res.ok) {
+      let errMsg = `HTTP ${res.status}`;
+      try { const d = await res.json(); errMsg = d.error || errMsg; } catch {}
+      console.error('[Resources] Failed to load:', errMsg);
+      const container = $('#tech-options');
+      container.innerHTML = `<div class="dropdown-error">Failed to load technicians: ${escHtml(errMsg)}</div>`;
+      return;
+    }
     allResources = await res.json();
     const container = $('#tech-options');
 
@@ -217,8 +233,10 @@ async function loadResources() {
       label.querySelector('input').addEventListener('change', updateTechSelection);
       container.appendChild(label);
     }
-  } catch {
-    // Silently fail - tech selection stays at "All Technicians"
+  } catch (err) {
+    console.error('[Resources] Failed to load:', err);
+    const container = $('#tech-options');
+    container.innerHTML = `<div class="dropdown-error">Failed to load technicians: ${escHtml(err.message)}</div>`;
   }
 }
 
