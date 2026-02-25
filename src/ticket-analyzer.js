@@ -455,7 +455,9 @@ function getSummary(analyzedTickets) {
   const categories = {};
 
   for (const t of analyzedTickets) {
-    categories[t.categoryLabel] = (categories[t.categoryLabel] || 0) + 1;
+    if (t.categoryLabel !== 'Needs Review' && t.categoryLabel !== 'Uncategorized') {
+      categories[t.categoryLabel] = (categories[t.categoryLabel] || 0) + 1;
+    }
   }
 
   return {
@@ -721,6 +723,7 @@ function getDeepAnalytics(analyzedTickets, rawTickets = [], options = {}) {
   }
 
   const categoryDeepBreakdown = Object.entries(categoryStats)
+    .filter(([label]) => label !== 'Needs Review' && label !== 'Uncategorized')
     .map(([label, stats]) => ({
       category: label,
       count: stats.count,
@@ -747,7 +750,7 @@ function getDeepAnalytics(analyzedTickets, rawTickets = [], options = {}) {
 
   // Top automation opportunities: highest score + highest volume combos
   const topOpportunities = categoryDeepBreakdown
-    .filter(c => c.category !== 'Uncategorized')
+    .filter(c => c.category !== 'Uncategorized' && c.category !== 'Needs Review')
     .map(c => ({
       category: c.category,
       count: c.count,
