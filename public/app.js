@@ -9,6 +9,7 @@ let aiEnabled = false; // whether AI is configured on the server
 let aiAnalyzed = false; // whether current tickets have been AI-analyzed
 let rawTicketsForAI = []; // raw ticket data needed for AI re-analysis
 let currentBatchInsights = null; // AI batch-level insights
+let currentPriorityMap = { 1: 'Critical', 2: 'High', 3: 'Medium', 4: 'Low' }; // dynamic priority map from Autotask
 
 // ── DOM Elements ──
 const $ = (sel) => document.querySelector(sel);
@@ -322,6 +323,7 @@ async function fetchTickets() {
     allTickets = data.tickets;
     currentAnalytics = data.analytics;
     lastQueueDiagnostics = data.queueDiagnostics || null;
+    if (data.priorityMap) currentPriorityMap = data.priorityMap;
     aiAnalyzed = false;
     // Store raw enriched tickets for potential AI re-analysis
     rawTicketsForAI = data._rawTickets || allTickets.map(t => ({
@@ -432,6 +434,7 @@ async function runAIAnalysis() {
     allTickets = data.tickets;
     currentAnalytics = data.analytics;
     currentBatchInsights = data.batchInsights || null;
+    if (data.priorityMap) currentPriorityMap = data.priorityMap;
     aiAnalyzed = true;
 
     renderSummary(data.summary);
@@ -498,6 +501,9 @@ function renderAnalytics(analytics, summary) {
 
   // SDE Metrics tab
   renderSDEMetrics();
+
+  // AI Insights tab (show placeholder if not yet analyzed)
+  if (!aiAnalyzed) renderAIInsights(null);
 }
 
 function renderCategoryBars(categoryBreakdown) {
@@ -544,11 +550,14 @@ function renderPriorityBars(priorityBreakdown) {
   container.innerHTML = '';
 
   const maxCount = Math.max(...Object.values(priorityBreakdown));
-  const colorMap = { 'Critical': 'fill-red', 'High': 'fill-orange', 'Medium': 'fill-yellow', 'Low': 'fill-green' };
+  const colorMap = { 'Critical': 'fill-red', 'High': 'fill-orange', 'Medium': 'fill-yellow', 'Low': 'fill-green', 'Standard': 'fill-cyan' };
 
   const entries = Object.entries(priorityBreakdown).sort((a, b) => {
-    const order = ['Critical', 'High', 'Medium', 'Low'];
-    return order.indexOf(a[0]) - order.indexOf(b[0]);
+    const order = ['Critical', 'High', 'Medium', 'Low', 'Standard'];
+    const ai = order.indexOf(a[0]);
+    const bi = order.indexOf(b[0]);
+    // Known priorities sort first in order, unknown priorities sort to end
+    return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
   });
 
   for (const [label, count] of entries) {
@@ -599,8 +608,12 @@ function renderOpportunities(topOpportunities) {
     return;
   }
 
-  container.innerHTML = topOpportunities.map((opp, i) => `
-    <div class="opportunity-card">
+  container.innerHTML = `
+    <p class="panel-desc" style="margin-bottom: 12px; opacity: 0.6; font-size: 0.85rem;">
+      Impact Score = (Avg Automation Score &times; Ticket Count &times; Minutes Saveable) / 100. Click an opportunity to see its tickets.
+    </p>` +
+    topOpportunities.map((opp, i) => `
+    <div class="opportunity-card opp-clickable" onclick="drillIntoOpportunity('${escHtml(opp.category)}')" title="Click to view ${opp.count} tickets in this category">
       <div class="opp-rank">#${i + 1}</div>
       <div class="opp-details">
         <div class="opp-name">${opp.category}</div>
@@ -616,6 +629,70 @@ function renderOpportunities(topOpportunities) {
       </div>
     </div>
   `).join('');
+}
+
+function drillIntoOpportunity(categoryLabel) {
+  // Filter tickets to this category and display them
+  const matched = allTickets.filter(t => t.categoryLabel === categoryLabel);
+  if (matched.length === 0) {
+    showToast(`No tickets found for "${categoryLabel}"`);
+    return;
+  }
+
+  // Build a modal showing the tickets in this opportunity
+  const priorityLabel = (t) => currentPriorityMap[t.priority] || '';
+  const html = matched.map(t => {
+    const pLabel = currentPriorityMap[t.priority] || '';
+    const pClass = pLabel ? `badge-priority-${pLabel.toLowerCase()}` : '';
+    const scoreClass = t.automationScore >= 80 ? 'high' : t.automationScore >= 50 ? 'medium' : 'low';
+    const ai = t.aiInsights;
+    return `
+      <div class="ticket-card" onclick="closeOppDrill(); openTicketDetail('${t.ticketId}')" style="cursor:pointer;">
+        <div class="ticket-header">
+          <span class="ticket-title">${escHtml(t.title)}</span>
+          <span class="ticket-id">#${t.ticketNumber || t.ticketId}</span>
+        </div>
+        <div class="ticket-meta">
+          <span class="badge badge-category">${t.categoryLabel}</span>
+          ${pLabel ? `<span class="badge ${pClass}">${pLabel}</span>` : ''}
+          <span class="badge badge-readiness badge-readiness-${t.automationReadiness || 'manual'}">${t.automationReadinessLabel || 'Manual'}</span>
+          ${t.isQuickHitter ? '<span class="badge badge-quick">Quick Hitter</span>' : ''}
+          ${t.estimatedMinutes ? `<span class="badge badge-time">~${t.estimatedMinutes} min</span>` : ''}
+          ${ai && ai.suggestedResolution ? `<div class="ticket-ai-resolution" style="margin-top:6px;">${escHtml(ai.suggestedResolution)}</div>` : ''}
+          <div class="score-bar">
+            Auto:
+            <div class="score-track">
+              <div class="score-fill ${scoreClass}" style="width: ${t.automationScore}%"></div>
+            </div>
+            ${t.automationScore}%
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+
+  // Show in a modal overlay
+  const overlay = document.createElement('div');
+  overlay.id = 'opp-drill-overlay';
+  overlay.className = 'modal-overlay active';
+  overlay.innerHTML = `
+    <div class="modal opp-drill-modal" style="max-width: 800px; max-height: 80vh; overflow-y: auto;">
+      <div class="modal-header">
+        <h2>${escHtml(categoryLabel)} — ${matched.length} Ticket${matched.length !== 1 ? 's' : ''}</h2>
+        <button class="modal-close" onclick="closeOppDrill()">&times;</button>
+      </div>
+      <div class="modal-body" style="padding: 16px;">
+        ${html}
+      </div>
+    </div>`;
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) closeOppDrill();
+  });
+  document.body.appendChild(overlay);
+}
+
+function closeOppDrill() {
+  const overlay = document.getElementById('opp-drill-overlay');
+  if (overlay) overlay.remove();
 }
 
 function renderROI(roi) {
@@ -656,15 +733,20 @@ function renderROI(roi) {
 
 // ── Render AI Batch Insights ──
 function renderAIInsights(insights) {
-  const tabBtn = document.getElementById('tab-btn-ai-insights');
-
   if (!insights) {
-    if (tabBtn) tabBtn.style.display = 'none';
+    // Show empty state when no AI data
+    const execContainer = $('#ai-exec-summary');
+    execContainer.innerHTML = `
+      <div class="empty-state">
+        <h3>No AI Insights Yet</h3>
+        <p>Click "AI Analyze" to run Claude AI analysis on your tickets for executive summaries, systemic issue detection, strategic recommendations, and automation opportunities.</p>
+      </div>`;
+    $('#ai-systemic-issues').innerHTML = '';
+    $('#ai-strategic-recs').innerHTML = '';
+    $('#ai-workload-insights').innerHTML = '';
+    $('#ai-auto-opportunities').innerHTML = '';
     return;
   }
-
-  // Show the AI Insights tab button
-  if (tabBtn) tabBtn.style.display = '';
 
   // Executive Summary
   const execContainer = $('#ai-exec-summary');
@@ -807,8 +889,7 @@ function renderTickets(tickets) {
       `<button class="script-btn" onclick="event.stopPropagation(); viewScript('${s.type}', '${s.name}')">${s.label}</button>`
     ).join('');
 
-    const priorityMap = { 1: 'Critical', 2: 'High', 3: 'Medium', 4: 'Low' };
-    const priorityLabel = priorityMap[t.priority] || '';
+    const priorityLabel = currentPriorityMap[t.priority] || '';
     const priorityClass = priorityLabel ? `badge-priority-${priorityLabel.toLowerCase()}` : '';
 
     const readinessClass = t.automationReadiness || 'manual';
@@ -998,8 +1079,7 @@ function openTicketDetail(ticketId) {
   const t = allTickets.find(tk => String(tk.ticketId) === String(ticketId));
   if (!t) return;
 
-  const priorityMap = { 1: 'Critical', 2: 'High', 3: 'Medium', 4: 'Low' };
-  const priorityLabel = priorityMap[t.priority] || 'Unknown';
+  const priorityLabel = currentPriorityMap[t.priority] || 'Unknown';
   const priorityClass = priorityLabel ? `badge-priority-${priorityLabel.toLowerCase()}` : '';
   const scoreClass = t.automationScore >= 80 ? 'high' : t.automationScore >= 50 ? 'medium' : 'low';
   const readinessClass = t.automationReadiness || 'manual';

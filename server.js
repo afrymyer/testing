@@ -23,6 +23,26 @@ if (process.env.AUTOTASK_API_USER && process.env.AUTOTASK_API_SECRET) {
   });
 }
 
+// Cached priority map (fetched from Autotask on first use)
+let cachedPriorityMap = null;
+
+async function getPriorityMap() {
+  if (cachedPriorityMap) return cachedPriorityMap;
+  if (!autotaskClient) return null; // demo mode uses default map
+  try {
+    const priorities = await autotaskClient.getPriorities();
+    cachedPriorityMap = {};
+    for (const p of priorities) {
+      cachedPriorityMap[p.value] = p.label;
+    }
+    console.log(`[Autotask] Priority map loaded:`, cachedPriorityMap);
+    return cachedPriorityMap;
+  } catch (err) {
+    console.warn(`[Autotask] Failed to fetch priority picklist: ${err.message}`);
+    return null;
+  }
+}
+
 // ── API Routes ──
 
 /**
@@ -130,11 +150,12 @@ app.get('/api/tickets', async (req, res) => {
     }
     console.log(`[API] Queue distribution:`, JSON.stringify(queueDist));
 
+    const priorityMap = await getPriorityMap();
     const analyzed = analyzeTickets(filteredTickets);
     const summary = getSummary(analyzed);
-    const analytics = getDeepAnalytics(analyzed, filteredTickets);
+    const analytics = getDeepAnalytics(analyzed, filteredTickets, { priorityMap });
 
-    res.json({ tickets: analyzed, summary, analytics, queueDiagnostics: queueDist });
+    res.json({ tickets: analyzed, summary, analytics, queueDiagnostics: queueDist, priorityMap });
   } catch (err) {
     console.error('Failed to fetch tickets:', err.message);
     res.status(500).json({ error: err.message });
@@ -255,8 +276,9 @@ app.post('/api/ai-analyze', async (req, res) => {
     // Merge AI results into keyword-analyzed tickets
     const merged = mergeAIResults(keywordAnalyzed, aiResults);
 
+    const priorityMap = await getPriorityMap();
     const summary = getSummary(merged);
-    const analytics = getDeepAnalytics(merged, tickets);
+    const analytics = getDeepAnalytics(merged, tickets, { priorityMap });
 
     // Generate batch-level strategic insights
     let batchInsights = null;
@@ -277,6 +299,7 @@ app.post('/api/ai-analyze', async (req, res) => {
       summary,
       analytics,
       batchInsights,
+      priorityMap,
       aiStats: {
         enhanced: aiEnhanced,
         categoryChanges,

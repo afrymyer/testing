@@ -693,9 +693,9 @@ function getSuggestedScripts(category) {
  * Get deep analytics for a batch of analyzed tickets.
  * Includes trend data, priority breakdown, ROI projections, and top opportunities.
  */
-function getDeepAnalytics(analyzedTickets, rawTickets = []) {
-  // Priority breakdown
-  const priorityMap = { 1: 'Critical', 2: 'High', 3: 'Medium', 4: 'Low' };
+function getDeepAnalytics(analyzedTickets, rawTickets = [], options = {}) {
+  // Priority breakdown — use dynamic map from Autotask picklist if provided, else fallback for demo
+  const priorityMap = options.priorityMap || { 1: 'Critical', 2: 'High', 3: 'Medium', 4: 'Low' };
   const priorityBreakdown = {};
   for (const t of analyzedTickets) {
     const pLabel = priorityMap[t.priority] || `Priority ${t.priority || 'None'}`;

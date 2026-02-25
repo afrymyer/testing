@@ -172,6 +172,18 @@ class AutotaskClient {
   }
 
   /**
+   * Fetch priority picklist values (maps numeric IDs to labels like Critical, High, etc.)
+   */
+  async getPriorities() {
+    const data = await this.request('/Tickets/entityInformation/fields');
+    const priorityField = (data.fields || []).find(f => f.name === 'priority');
+    if (!priorityField || !priorityField.picklistValues) return [];
+    return priorityField.picklistValues
+      .filter(v => v.isActive)
+      .map(v => ({ value: v.value, label: v.label }));
+  }
+
+  /**
    * Fetch issue/sub-issue types for better categorization.
    */
   async getIssueTypes() {
