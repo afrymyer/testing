@@ -826,10 +826,12 @@ function renderTickets(tickets) {
           <span class="badge badge-category">${t.categoryLabel}</span>
           ${ai ? '<span class="badge badge-ai">AI</span>' : ''}
           ${ai && ai.sentiment ? `<span class="badge badge-sentiment badge-sentiment-${ai.sentiment.level}" title="Urgency: ${ai.sentiment.urgency}/5">${ai.sentiment.level}</span>` : ''}
+          ${ai && ai.sentiment && ai.sentiment.businessImpact ? `<span class="badge badge-impact badge-impact-${ai.sentiment.businessImpact}">${ai.sentiment.businessImpact}</span>` : ''}
+          ${ai && ai.sentiment && ai.sentiment.needsFollowUp ? '<span class="badge badge-followup">Needs Follow-Up</span>' : ''}
           ${ai && ai.categoryChanged ? `<span class="badge badge-ai-reclassified" title="AI reclassified from ${escHtml(ai.originalCategory)}">Reclassified</span>` : ''}
           ${ai && ai.escalation ? '<span class="badge badge-escalate">Escalate</span>' : ''}
           <span class="badge badge-readiness badge-readiness-${readinessClass}">${t.automationReadinessLabel || 'Manual'}</span>
-          ${t.isQuickHitter ? '<span class="badge badge-quick">Quick Hitter</span>' : ''}
+          ${ai && ai.quickHitter && ai.quickHitter.isQuickWin ? `<span class="badge badge-quick">Quick Win ~${ai.quickHitter.estimatedMinutes || '?'}m</span>` : (t.isQuickHitter ? '<span class="badge badge-quick">Quick Hitter</span>' : '')}
           ${t.estimatedMinutes ? `<span class="badge badge-time">~${t.estimatedMinutes} min</span>` : ''}
           ${t.workedHours > 0 ? `<span class="badge badge-worked">${t.workedHours.toFixed(2)}h worked</span>` : ''}
           ${resourceName ? `<span class="badge badge-tech">${escHtml(resourceName)}</span>` : ''}
@@ -1135,19 +1137,43 @@ function openTicketDetail(ticketId) {
             <div class="ai-field">
               <div class="ai-field-label">AI-Recommended Scripts</div>
               <p>${t.aiInsights.recommendedScripts.map(s => `<code>${escHtml(s)}</code>`).join(' ')}</p>
+              ${t.aiInsights.scriptReasoning ? `<p class="ai-script-reasoning">${escHtml(t.aiInsights.scriptReasoning)}</p>` : ''}
+            </div>
+          ` : `
+            ${t.aiInsights.scriptReasoning ? `
+              <div class="ai-field">
+                <div class="ai-field-label">Script Assessment</div>
+                <p class="ai-script-reasoning">${escHtml(t.aiInsights.scriptReasoning)}</p>
+              </div>
+            ` : ''}
+          `}
+          ${t.aiInsights.quickHitter ? `
+            <div class="ai-field ai-quickhitter-field">
+              <div class="ai-field-label">Quick Win Assessment</div>
+              <div class="ai-quickhitter-detail">
+                <span class="badge ${t.aiInsights.quickHitter.isQuickWin ? 'badge-quick-win' : 'badge-not-quick'}">${t.aiInsights.quickHitter.isQuickWin ? 'Quick Win (' + (t.aiInsights.quickHitter.estimatedMinutes || '?') + ' min)' : 'Not a Quick Win'}</span>
+              </div>
+              <p class="ai-quickhitter-justification">${escHtml(t.aiInsights.quickHitter.justification || '')}</p>
+              ${t.aiInsights.quickHitter.blockers && t.aiInsights.quickHitter.blockers.length ? `
+                <p class="ai-quickhitter-blockers">Potential blockers: ${t.aiInsights.quickHitter.blockers.map(b => `<span class="badge badge-blocker">${escHtml(b)}</span>`).join(' ')}</p>
+              ` : ''}
             </div>
           ` : ''}
           ${t.aiInsights.sentiment ? `
             <div class="ai-field ai-sentiment-field">
-              <div class="ai-field-label">User Sentiment</div>
+              <div class="ai-field-label">Client Sentiment</div>
               <div class="ai-sentiment-detail">
                 <span class="badge badge-sentiment badge-sentiment-${t.aiInsights.sentiment.level}">${t.aiInsights.sentiment.level}</span>
+                ${t.aiInsights.sentiment.businessImpact ? `<span class="badge badge-impact badge-impact-${t.aiInsights.sentiment.businessImpact}">${t.aiInsights.sentiment.businessImpact}</span>` : ''}
                 <span class="ai-urgency-bar">
                   Urgency:
                   ${[1,2,3,4,5].map(n => `<span class="ai-urgency-dot ${n <= t.aiInsights.sentiment.urgency ? 'ai-urgency-active' : ''}"></span>`).join('')}
                   <span class="ai-urgency-num">${t.aiInsights.sentiment.urgency}/5</span>
                 </span>
               </div>
+              ${t.aiInsights.sentiment.needsFollowUp ? `
+                <p class="ai-followup-alert">Needs proactive follow-up — client may be frustrated or waiting</p>
+              ` : ''}
               ${t.aiInsights.sentiment.cues && t.aiInsights.sentiment.cues.length ? `
                 <p class="ai-sentiment-cues">Cues: ${t.aiInsights.sentiment.cues.map(c => `<em>"${escHtml(c)}"</em>`).join(', ')}</p>
               ` : ''}

@@ -55,15 +55,27 @@ For each ticket, provide:
 3. automationScore: 0-100 how automatable this specific ticket is (consider the details, not just category)
 4. suggestedResolution: 1-3 sentence specific resolution steps a technician should take
 5. rootCause: brief likely root cause of the issue
-6. recommendedScripts: array of script filenames from the available list that would help (empty if none apply)
-7. escalation: boolean — should this be escalated rather than handled at L1?
-8. reasoning: 1-2 sentence explanation of your analysis
-9. sentiment: object with:
-   - level: "frustrated" | "urgent" | "neutral" | "patient" — the user's emotional tone
-   - urgency: 1-5 scale (5 = most urgent) based on language cues, not just priority field
-   - cues: array of 1-3 short phrases from the ticket that signal the sentiment (e.g. "tried multiple times", "been waiting all day", "when you get a chance")
+6. recommendedScripts: array of script filenames from the AVAILABLE AUTOMATION SCRIPTS list that would resolve this ticket. Be specific — match scripts to the actual symptoms described, not just the category. If the keyword matcher missed a relevant script, include it here. If the keyword matcher suggested a wrong script, do NOT include it. Only recommend scripts that would genuinely help resolve this specific issue.
+7. scriptReasoning: 1 sentence explaining why you chose these scripts (or why none apply). Example: "clear-print-spooler.ps1 matches because user describes stuck print jobs in queue" or "No scripts apply — this requires physical hardware inspection"
+8. escalation: boolean — should this be escalated rather than handled at L1?
+9. reasoning: 1-2 sentence explanation of your analysis
+
+10. sentiment: object with:
+   - level: "frustrated" | "angry" | "urgent" | "anxious" | "neutral" | "patient" | "appreciative" — the CLIENT's emotional tone based on their language
+   - urgency: 1-5 scale (5 = most urgent) based on language cues, not just the priority field
+   - businessImpact: "blocking" | "degraded" | "inconvenience" | "routine" — how much this affects the client's ability to work
+   - cues: array of 1-3 short phrases from the ticket that signal the sentiment (e.g. "tried multiple times", "entire department down", "when you get a chance", "ASAP", "been 3 days")
+   - needsFollowUp: boolean — true if the client's tone suggests they need a proactive status update or empathetic response (frustrated, angry, or waiting a long time)
+
+11. quickHitter: object with:
+   - isQuickWin: boolean — true if a competent L1 tech could resolve this in 5-20 minutes using available tools/scripts
+   - estimatedMinutes: your estimate of actual resolution time in minutes (be realistic, include verification time)
+   - justification: 1 sentence why this is or isn't a quick win. Example: "Password reset with account unlock is a 5-min task with the reset script" or "Requires on-site hardware inspection, not a quick win"
+   - blockers: array of 0-2 things that could prevent quick resolution (e.g. "user not available", "needs manager approval", "requires reboot during business hours")
 
 Be specific and practical. A password reset is different from an MFA enrollment issue. A slow computer from uptime is different from a slow computer from malware. Use the ticket details to make precise assessments, not just surface-level keyword matches.
+
+IMPORTANT for script recommendations: Review the AVAILABLE AUTOMATION SCRIPTS list carefully. Match based on what the script ACTUALLY RESOLVES (not just the name). If a ticket describes symptoms that a script can fix, recommend it even if the category doesn't obviously match. For example, a "Teams showing blank screen" ticket should get clear-teams-cache.ps1 even if categorized under a different category.
 
 Respond with a JSON array (one object per ticket) matching the input order. No markdown wrapping — just the raw JSON array.`;
 }
@@ -132,9 +144,11 @@ async function analyzeBatch(anthropic, tickets) {
         aiSuggestedResolution: ai.suggestedResolution || '',
         aiRootCause: ai.rootCause || '',
         aiRecommendedScripts: Array.isArray(ai.recommendedScripts) ? ai.recommendedScripts : [],
+        aiScriptReasoning: ai.scriptReasoning || '',
         aiEscalation: !!ai.escalation,
         aiReasoning: ai.reasoning || '',
         aiSentiment: ai.sentiment || null,
+        aiQuickHitter: ai.quickHitter || null,
       };
     });
   } catch (parseErr) {
@@ -192,6 +206,23 @@ function mergeAIResults(analyzedTickets, aiResults) {
             estimatedMinutes: aiPattern ? aiPattern.avgMinutes : ticket.estimatedMinutes,
           }
         : {}),
+      // Override scripts if AI recommended different ones
+      ...(ai.aiRecommendedScripts.length > 0 ? {
+        suggestedScripts: ai.aiRecommendedScripts.map(scriptName => {
+          const found = RESOLUTION_SCRIPTS.find(s => s.name === scriptName);
+          return found ? {
+            name: found.name, type: found.type, label: found.label,
+            resolves: found.resolves, requires: found.requires,
+            relevance: ai.aiConfidence, matchedSymptoms: ['AI-matched'],
+            manualMinutes: found.manualMinutes,
+          } : { name: scriptName, type: 'unknown', label: scriptName, relevance: ai.aiConfidence, matchedSymptoms: ['AI-matched'], manualMinutes: null };
+        }),
+      } : {}),
+      // Override quick-hitter flag if AI has a different assessment
+      ...(ai.aiQuickHitter ? {
+        isQuickHitter: ai.aiQuickHitter.isQuickWin,
+        estimatedMinutes: ai.aiQuickHitter.estimatedMinutes || ticket.estimatedMinutes,
+      } : {}),
       // Always add AI insights as a separate object
       aiInsights: {
         category: ai.aiCategory,
@@ -201,9 +232,11 @@ function mergeAIResults(analyzedTickets, aiResults) {
         suggestedResolution: ai.aiSuggestedResolution,
         rootCause: ai.aiRootCause,
         recommendedScripts: ai.aiRecommendedScripts,
+        scriptReasoning: ai.aiScriptReasoning,
         escalation: ai.aiEscalation,
         reasoning: ai.aiReasoning,
         sentiment: ai.aiSentiment,
+        quickHitter: ai.aiQuickHitter,
         categoryChanged,
         originalCategory: categoryChanged ? ticket.categoryLabel : null,
       },
