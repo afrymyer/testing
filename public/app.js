@@ -280,8 +280,25 @@ async function fetchTickets() {
   try {
     const res = await fetch(`/api/tickets?${params}`);
     if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error);
+      let errMsg = `HTTP ${res.status}`;
+      let errBody = '';
+      try {
+        const errData = await res.json();
+        errMsg = errData.error || errMsg;
+      } catch {
+        errBody = await res.text().catch(() => '');
+        if (errBody) errMsg = errBody;
+      }
+      // Add troubleshooting hints based on status code
+      let hint = '';
+      if (res.status === 401) {
+        hint = '\n\nFix: Check AUTOTASK_API_USER, AUTOTASK_API_SECRET, and AUTOTASK_API_INTEGRATION_CODE in your .env file. Make sure the API user is active in Autotask.';
+      } else if (res.status === 403) {
+        hint = '\n\nFix: Your AUTOTASK_API_ZONE is wrong. It should be https://webservicesN.autotask.net (not https://wwN.autotask.net). Check your Autotask zone number.';
+      } else if (res.status === 503) {
+        hint = '\n\nFix: Autotask credentials are not configured. Create a .env file with your API credentials.';
+      }
+      throw new Error(errMsg + hint);
     }
     const data = await res.json();
     allTickets = data.tickets;
@@ -310,7 +327,17 @@ async function fetchTickets() {
     statusText.textContent = `Loaded ${allTickets.length} tickets${queueLabel}${timeLabel}. ${data.summary.quickHitterCount} quick hitters found.${aiHint}`;
   } catch (err) {
     statusBar.className = 'status-bar error';
-    statusText.textContent = `Error: ${err.message}`;
+    statusText.innerHTML = '';
+    // Show error in a detailed, visible way
+    const errEl = document.createElement('div');
+    errEl.className = 'error-detail';
+    errEl.innerHTML = `
+      <strong>Failed to fetch tickets</strong><br>
+      <span class="error-message">${escHtml(err.message).replace(/\n/g, '<br>')}</span>
+    `;
+    statusText.appendChild(errEl);
+    // Also log full details to browser console
+    console.error('[Fetch Error]', err);
   }
 }
 

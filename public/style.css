@@ -1827,6 +1827,33 @@ main {
   color: var(--purple);
 }
 
+/* === Error Detail === */
+.error-detail {
+  line-height: 1.6;
+}
+
+.error-detail strong {
+  color: var(--red);
+  font-size: 0.9rem;
+}
+
+.error-detail .error-message {
+  font-size: 0.82rem;
+  color: var(--text);
+  margin-top: 0.25rem;
+  display: block;
+  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+  background: rgba(248, 113, 113, 0.06);
+  border: 1px solid rgba(248, 113, 113, 0.15);
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  margin-top: 0.4rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
 /* === Utilities === */
 .hidden { display: none !important; }
 
