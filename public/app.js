@@ -1001,11 +1001,16 @@ function renderAITickets(tickets) {
 }
 
 function showEmptyState() {
-  ticketsContainer.innerHTML = `
-    <div class="empty-state">
-      <h3>No tickets loaded</h3>
-      <p>Click "Fetch Tickets" to pull live data, or "Load Demo Tickets" to see sample data.</p>
-    </div>`;
+  const aiContainer = $('#ai-tickets');
+  const wrapper = $('#ai-ticket-list');
+  if (wrapper) wrapper.style.display = '';
+  if (aiContainer) {
+    aiContainer.innerHTML = `
+      <div class="empty-state">
+        <h3>No tickets loaded</h3>
+        <p>Click "Fetch Tickets" to pull live data, or "Load Demo Tickets" to see sample data.</p>
+      </div>`;
+  }
 }
 
 // ── Script Viewer ──
@@ -1104,15 +1109,9 @@ function applyFilters() {
     filtered.sort((a, b) => b.automationScore - a.automationScore);
   }
 
-  // When AI-analyzed, render tickets inside the AI Insights tab instead of the standalone section
-  if (aiAnalyzed) {
-    $('#ticket-list').style.display = 'none';
-    renderAITickets(filtered);
-  } else {
-    $('#ticket-list').style.display = '';
-    $('#ai-ticket-list').style.display = 'none';
-    renderTickets(filtered);
-  }
+  // Always render tickets inside the AI Insights tab (standalone section is hidden)
+  $('#ticket-list').style.display = 'none';
+  renderAITickets(filtered);
 }
 
 // ── Tab Switching ──
