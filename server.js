@@ -280,11 +280,17 @@ app.post('/api/ai-analyze', async (req, res) => {
     const summary = getSummary(merged);
     const analytics = getDeepAnalytics(merged, tickets, { priorityMap });
 
-    // Generate batch-level strategic insights
+    // Generate batch-level strategic insights (with overall timeout guard)
     let batchInsights = null;
     try {
       console.log(`[AI] Generating batch-level insights...`);
-      batchInsights = await generateBatchInsights(tickets, merged);
+      const insightsTimeout = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Batch insights overall timeout (5 min)')), 300000)
+      );
+      batchInsights = await Promise.race([
+        generateBatchInsights(tickets, merged),
+        insightsTimeout,
+      ]);
     } catch (batchErr) {
       console.warn(`[AI] Batch insights failed (non-fatal): ${batchErr.message}`);
     }

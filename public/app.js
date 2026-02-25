@@ -442,6 +442,12 @@ async function runAIAnalysis() {
     renderAIInsights(currentBatchInsights);
     applyFilters();
 
+    // Auto-switch to AI Insights tab so user sees the combined view
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    $('#tab-btn-ai-insights').classList.add('active');
+    document.getElementById('tab-ai-insights').classList.add('active');
+
     const stats = data.aiStats || {};
     statusBar.className = 'status-bar ai-active';
     statusText.textContent = `AI Analysis complete (${stats.elapsedSeconds || '?'}s). ${stats.enhanced || 0} tickets enhanced, ${stats.categoryChanges || 0} categories reclassified by AI.`;
@@ -931,6 +937,69 @@ function renderTickets(tickets) {
   }).join('');
 }
 
+// ── Render Tickets inside AI Insights tab ──
+function renderAITickets(tickets) {
+  const container = $('#ai-tickets');
+  const countLabel = $('#ai-ticket-count-label');
+  const wrapper = $('#ai-ticket-list');
+
+  if (!tickets.length) {
+    wrapper.style.display = 'none';
+    return;
+  }
+
+  wrapper.style.display = '';
+  const visibleCount = allTickets.filter(t => t.category !== 'uncategorized' && t.categoryLabel !== 'Needs Review').length;
+  countLabel.textContent = `Showing ${tickets.length} of ${visibleCount}`;
+
+  container.innerHTML = tickets.map(t => {
+    const scoreClass = t.automationScore >= 80 ? 'high' : t.automationScore >= 50 ? 'medium' : 'low';
+    const scripts = (t.suggestedScripts || []).map(s =>
+      `<button class="script-btn" onclick="event.stopPropagation(); viewScript('${s.type}', '${s.name}')">${s.label}</button>`
+    ).join('');
+
+    const priorityLabel = currentPriorityMap[t.priority] || '';
+    const priorityClass = priorityLabel ? `badge-priority-${priorityLabel.toLowerCase()}` : '';
+
+    const readinessClass = t.automationReadiness || 'manual';
+    const resourceName = getResourceName(t.assignedResourceID);
+    const ai = t.aiInsights;
+    const catClass = 'cat-' + (t.category || 'general_support').toLowerCase().replace(/[\s\/]+/g, '_');
+
+    return `
+      <div class="ticket-card ${catClass} ${t.isQuickHitter ? 'quick-hitter' : ''}" onclick="openTicketDetail('${t.ticketId}')">
+        <div class="ticket-header">
+          <span class="ticket-title">${escHtml(t.title)}</span>
+          <span class="ticket-id">#${t.ticketNumber || t.ticketId}</span>
+        </div>
+        <div class="ticket-meta">
+          <span class="badge badge-category">${t.categoryLabel}</span>
+          ${ai ? '<span class="badge badge-ai">AI</span>' : ''}
+          ${ai && ai.sentiment ? `<span class="badge badge-sentiment badge-sentiment-${ai.sentiment.level}" title="Urgency: ${ai.sentiment.urgency}/5">${ai.sentiment.level}</span>` : ''}
+          ${ai && ai.sentiment && ai.sentiment.businessImpact ? `<span class="badge badge-impact badge-impact-${ai.sentiment.businessImpact}">${ai.sentiment.businessImpact}</span>` : ''}
+          ${ai && ai.sentiment && ai.sentiment.needsFollowUp ? '<span class="badge badge-followup">Needs Follow-Up</span>' : ''}
+          ${ai && ai.categoryChanged ? `<span class="badge badge-ai-reclassified" title="AI reclassified from ${escHtml(ai.originalCategory)}">Reclassified</span>` : ''}
+          ${ai && ai.escalation ? '<span class="badge badge-escalate">Escalate</span>' : ''}
+          <span class="badge badge-readiness badge-readiness-${readinessClass}">${t.automationReadinessLabel || 'Manual'}</span>
+          ${ai && ai.quickHitter && ai.quickHitter.isQuickWin ? `<span class="badge badge-quick">Quick Win ~${ai.quickHitter.estimatedMinutes || '?'}m</span>` : (t.isQuickHitter ? '<span class="badge badge-quick">Quick Hitter</span>' : '')}
+          ${t.estimatedMinutes ? `<span class="badge badge-time">~${t.estimatedMinutes} min</span>` : ''}
+          ${t.workedHours > 0 ? `<span class="badge badge-worked">${t.workedHours.toFixed(2)}h worked</span>` : ''}
+          ${resourceName ? `<span class="badge badge-tech">${escHtml(resourceName)}</span>` : ''}
+          ${priorityLabel ? `<span class="badge ${priorityClass}">${priorityLabel}</span>` : ''}
+          <div class="score-bar">
+            Auto:
+            <div class="score-track">
+              <div class="score-fill ${scoreClass}" style="width: ${t.automationScore}%"></div>
+            </div>
+            ${t.automationScore}%
+          </div>
+        </div>
+        ${ai && ai.suggestedResolution ? `<div class="ticket-ai-resolution">${escHtml(ai.suggestedResolution)}</div>` : ''}
+        ${scripts ? `<div class="ticket-scripts">${scripts}</div>` : ''}
+      </div>`;
+  }).join('');
+}
+
 function showEmptyState() {
   ticketsContainer.innerHTML = `
     <div class="empty-state">
@@ -1009,7 +1078,9 @@ async function browseScripts() {
 
 // ── Filtering & Sorting ──
 function applyFilters() {
-  let filtered = [...allTickets];
+  // Always exclude "Needs Review" / uncategorized tickets
+  let filtered = allTickets.filter(t => t.category !== 'uncategorized' && t.categoryLabel !== 'Needs Review');
+
   const category = $('#filter-category').value;
   const sort = $('#sort-by').value;
 
@@ -1033,7 +1104,15 @@ function applyFilters() {
     filtered.sort((a, b) => b.automationScore - a.automationScore);
   }
 
-  renderTickets(filtered);
+  // When AI-analyzed, render tickets inside the AI Insights tab instead of the standalone section
+  if (aiAnalyzed) {
+    $('#ticket-list').style.display = 'none';
+    renderAITickets(filtered);
+  } else {
+    $('#ticket-list').style.display = '';
+    $('#ai-ticket-list').style.display = 'none';
+    renderTickets(filtered);
+  }
 }
 
 // ── Tab Switching ──

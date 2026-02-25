@@ -81,6 +81,8 @@ Respond with a JSON array (one object per ticket) matching the input order. No m
 }
 
 const BATCH_SIZE = 10;
+const INSIGHTS_CHUNK_SIZE = 75;
+const INSIGHTS_TIMEOUT_MS = 120000; // 2 minutes per chunk
 
 /**
  * Analyze a batch of tickets using Claude.
@@ -250,16 +252,22 @@ function mergeAIResults(analyzedTickets, aiResults) {
 }
 
 /**
- * Generate batch-level AI insights that look across ALL tickets for patterns,
- * systemic issues, strategic recommendations, and workload predictions.
+ * Run a promise with a timeout. Rejects if the promise doesn't settle within `ms`.
  */
-async function generateBatchInsights(tickets, analyzedTickets) {
-  const anthropic = getClient();
-  if (!anthropic) {
-    throw new Error('Anthropic API key not configured');
-  }
+function withTimeout(promise, ms, label) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms / 1000}s`)), ms);
+    promise.then(
+      (val) => { clearTimeout(timer); resolve(val); },
+      (err) => { clearTimeout(timer); reject(err); }
+    );
+  });
+}
 
-  // Build a condensed summary of the ticket batch for the AI
+/**
+ * Build the condensed description list and aggregate stats for a set of analyzed tickets.
+ */
+function buildInsightsSummary(analyzedTickets) {
   const categoryCount = {};
   const priorityCount = {};
   let totalAutoScore = 0;
@@ -276,7 +284,6 @@ async function generateBatchInsights(tickets, analyzedTickets) {
     totalAutoScore += t.automationScore || 0;
     if (t.aiInsights?.escalation) escalationCount++;
 
-    // Include a brief of each ticket for pattern detection
     descriptions.push({
       id: t.ticketNumber || t.ticketId,
       title: t.title || '',
@@ -293,7 +300,10 @@ async function generateBatchInsights(tickets, analyzedTickets) {
     ? Math.round(totalAutoScore / analyzedTickets.length)
     : 0;
 
-  const systemPrompt = `You are a senior MSP operations strategist analyzing a batch of IT support tickets. Your job is to identify patterns, systemic issues, and strategic opportunities that individual ticket analysis would miss.
+  return { categoryCount, priorityCount, avgAutoScore, escalationCount, descriptions };
+}
+
+const INSIGHTS_SYSTEM_PROMPT = `You are a senior MSP operations strategist analyzing a batch of IT support tickets. Your job is to identify patterns, systemic issues, and strategic opportunities that individual ticket analysis would miss.
 
 You have deep knowledge of MSP operations, SLA management, technician efficiency, and IT infrastructure health indicators.
 
@@ -329,48 +339,156 @@ Respond with a JSON object (no markdown wrapping) containing:
 
 Be specific, data-driven, and practical. Reference actual ticket IDs and categories from the data. Don't be generic — tailor every insight to what you see in THIS specific batch.`;
 
-  const userMessage = `Analyze this batch of ${analyzedTickets.length} MSP tickets for cross-cutting patterns and strategic insights.
+/**
+ * Analyze a single chunk of tickets for batch insights.
+ */
+async function analyzeInsightsChunk(anthropic, chunkTickets, totalTicketCount, chunkIndex, totalChunks) {
+  const { categoryCount, priorityCount, avgAutoScore, escalationCount, descriptions } = buildInsightsSummary(chunkTickets);
+
+  const chunkLabel = totalChunks > 1
+    ? `\n\nNOTE: This is chunk ${chunkIndex + 1} of ${totalChunks} (${chunkTickets.length} of ${totalTicketCount} total tickets). Focus on patterns in THIS chunk; results will be combined.`
+    : '';
+
+  const userMessage = `Analyze this batch of ${chunkTickets.length} MSP tickets for cross-cutting patterns and strategic insights.
 
 BATCH SUMMARY:
-- Total tickets: ${analyzedTickets.length}
+- Total tickets: ${chunkTickets.length}${totalChunks > 1 ? ` (chunk ${chunkIndex + 1}/${totalChunks}, ${totalTicketCount} total)` : ''}
 - Category distribution: ${JSON.stringify(categoryCount)}
 - Priority distribution: ${JSON.stringify(priorityCount)}
 - Average automation score: ${avgAutoScore}%
 - Escalation flags: ${escalationCount}
 
 INDIVIDUAL TICKETS:
-${JSON.stringify(descriptions, null, 2)}`;
+${JSON.stringify(descriptions, null, 2)}${chunkLabel}`;
 
-  const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 4096,
-    system: systemPrompt,
-    messages: [{ role: 'user', content: userMessage }],
-  });
+  const response = await withTimeout(
+    anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 4096,
+      system: INSIGHTS_SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: userMessage }],
+    }),
+    INSIGHTS_TIMEOUT_MS,
+    `Batch insights chunk ${chunkIndex + 1}`
+  );
 
   const rawText = response.content[0].text.trim();
   const text = stripCodeFences(rawText);
+  return JSON.parse(text);
+}
 
-  try {
-    const parsed = JSON.parse(text);
+/**
+ * Merge multiple chunk insights into a single combined result.
+ */
+function mergeChunkInsights(chunkResults) {
+  if (chunkResults.length === 1) {
+    const p = chunkResults[0];
     return {
-      executiveSummary: parsed.executiveSummary || '',
-      systemicIssues: Array.isArray(parsed.systemicIssues) ? parsed.systemicIssues : [],
-      strategicRecommendations: Array.isArray(parsed.strategicRecommendations) ? parsed.strategicRecommendations : [],
-      workloadInsights: parsed.workloadInsights || {},
-      automationOpportunities: Array.isArray(parsed.automationOpportunities) ? parsed.automationOpportunities : [],
+      executiveSummary: p.executiveSummary || '',
+      systemicIssues: Array.isArray(p.systemicIssues) ? p.systemicIssues : [],
+      strategicRecommendations: Array.isArray(p.strategicRecommendations) ? p.strategicRecommendations : [],
+      workloadInsights: p.workloadInsights || {},
+      automationOpportunities: Array.isArray(p.automationOpportunities) ? p.automationOpportunities : [],
     };
-  } catch (parseErr) {
-    console.error('[AI] Failed to parse batch insights:', parseErr.message);
-    console.error('[AI] Raw response:', text.slice(0, 500));
+  }
+
+  // Combine all chunk insights
+  const allIssues = [];
+  const allRecs = [];
+  const allAutoOps = [];
+  const summaries = [];
+
+  for (const p of chunkResults) {
+    if (p.executiveSummary) summaries.push(p.executiveSummary);
+    if (Array.isArray(p.systemicIssues)) allIssues.push(...p.systemicIssues);
+    if (Array.isArray(p.strategicRecommendations)) allRecs.push(...p.strategicRecommendations);
+    if (Array.isArray(p.automationOpportunities)) allAutoOps.push(...p.automationOpportunities);
+  }
+
+  // Deduplicate systemic issues by title
+  const seenIssues = new Set();
+  const dedupedIssues = allIssues.filter(i => {
+    const key = (i.issue || '').toLowerCase();
+    if (seenIssues.has(key)) return false;
+    seenIssues.add(key);
+    return true;
+  }).slice(0, 5);
+
+  // Deduplicate recommendations by title
+  const seenRecs = new Set();
+  const dedupedRecs = allRecs.filter(r => {
+    const key = (r.title || '').toLowerCase();
+    if (seenRecs.has(key)) return false;
+    seenRecs.add(key);
+    return true;
+  }).slice(0, 5);
+
+  // Deduplicate automation opportunities by title
+  const seenOps = new Set();
+  const dedupedOps = allAutoOps.filter(o => {
+    const key = (o.opportunity || '').toLowerCase();
+    if (seenOps.has(key)) return false;
+    seenOps.add(key);
+    return true;
+  }).slice(0, 4);
+
+  // Use the last chunk's workload insights (it has the full picture of its chunk)
+  // or pick the most detailed one
+  const workloadInsights = chunkResults[chunkResults.length - 1]?.workloadInsights || {};
+
+  return {
+    executiveSummary: summaries.join(' '),
+    systemicIssues: dedupedIssues,
+    strategicRecommendations: dedupedRecs,
+    workloadInsights,
+    automationOpportunities: dedupedOps,
+  };
+}
+
+/**
+ * Generate batch-level AI insights that look across ALL tickets for patterns,
+ * systemic issues, strategic recommendations, and workload predictions.
+ *
+ * For large ticket sets (>INSIGHTS_CHUNK_SIZE), tickets are processed in chunks
+ * and the results are merged to avoid API timeouts and context window limits.
+ */
+async function generateBatchInsights(tickets, analyzedTickets) {
+  const anthropic = getClient();
+  if (!anthropic) {
+    throw new Error('Anthropic API key not configured');
+  }
+
+  // Split into manageable chunks
+  const chunks = [];
+  for (let i = 0; i < analyzedTickets.length; i += INSIGHTS_CHUNK_SIZE) {
+    chunks.push(analyzedTickets.slice(i, i + INSIGHTS_CHUNK_SIZE));
+  }
+
+  console.log(`[AI] Generating batch insights: ${analyzedTickets.length} tickets in ${chunks.length} chunk(s)`);
+
+  const chunkResults = [];
+  for (let i = 0; i < chunks.length; i++) {
+    try {
+      console.log(`[AI] Processing insights chunk ${i + 1}/${chunks.length} (${chunks[i].length} tickets)...`);
+      const parsed = await analyzeInsightsChunk(anthropic, chunks[i], analyzedTickets.length, i, chunks.length);
+      chunkResults.push(parsed);
+    } catch (chunkErr) {
+      console.warn(`[AI] Insights chunk ${i + 1}/${chunks.length} failed: ${chunkErr.message}`);
+      // Continue with remaining chunks — partial insights are better than none
+    }
+  }
+
+  if (chunkResults.length === 0) {
     return {
-      executiveSummary: 'AI batch analysis could not be parsed. Individual ticket insights are still available.',
+      executiveSummary: 'AI batch analysis could not be completed. Individual ticket insights are still available.',
       systemicIssues: [],
       strategicRecommendations: [],
       workloadInsights: {},
       automationOpportunities: [],
     };
   }
+
+  return mergeChunkInsights(chunkResults);
 }
 
 function clamp(value, min, max) {
