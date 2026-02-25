@@ -2,31 +2,31 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 :root {
-  --bg: #06080f;
-  --bg-mesh-1: rgba(122, 193, 67, 0.06);
-  --bg-mesh-2: rgba(139, 92, 246, 0.06);
-  --bg-mesh-3: rgba(34, 211, 238, 0.04);
+  --bg: #0a0c10;
+  --bg-mesh-1: rgba(50, 141, 70, 0.06);
+  --bg-mesh-2: rgba(182, 212, 105, 0.05);
+  --bg-mesh-3: rgba(55, 134, 222, 0.04);
   --surface: rgba(16, 20, 32, 0.85);
   --surface-solid: #10141f;
   --surface-2: rgba(24, 29, 46, 0.9);
   --surface-3: #222738;
   --border: rgba(60, 70, 110, 0.35);
-  --border-glow: rgba(122, 193, 67, 0.2);
+  --border-glow: rgba(50, 141, 70, 0.2);
   --border-subtle: #1e2236;
   --text: #e8ebf4;
   --text-dim: #7d829b;
-  --primary: #7AC143;
-  --primary-hover: #6aad38;
-  --primary-glow: rgba(122, 193, 67, 0.25);
-  --accent: #F5C518;
-  --green: #34d399;
-  --yellow: #fbbf24;
+  --primary: #328d46;
+  --primary-hover: #297a3b;
+  --primary-glow: rgba(50, 141, 70, 0.25);
+  --accent: #b6d469;
+  --green: #328d46;
+  --yellow: #db991a;
   --orange: #fb923c;
-  --red: #f87171;
+  --red: #ef0b3c;
   --purple: #a78bfa;
-  --cyan: #22d3ee;
-  --ai-purple: #8b5cf6;
-  --ai-purple-dim: rgba(139, 92, 246, 0.12);
+  --cyan: #3786de;
+  --ai-purple: #3786de;
+  --ai-purple-dim: rgba(55, 134, 222, 0.12);
   --glass: rgba(255, 255, 255, 0.04);
   --glass-border: rgba(255, 255, 255, 0.08);
   --glass-highlight: rgba(255, 255, 255, 0.12);
@@ -35,7 +35,7 @@
   --shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 6px 20px rgba(0, 0, 0, 0.35);
   --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.45);
-  --shadow-glow: 0 0 30px rgba(122, 193, 67, 0.08);
+  --shadow-glow: 0 0 30px rgba(50, 141, 70, 0.08);
 }
 
 body {
@@ -89,9 +89,9 @@ header::after {
   left: 0;
   right: 0;
   height: 3px;
-  background: linear-gradient(90deg, transparent 5%, var(--primary), var(--accent), var(--ai-purple), var(--cyan), var(--primary), transparent 95%);
+  background: linear-gradient(90deg, transparent 5%, var(--primary), var(--accent), var(--cyan), var(--primary), transparent 95%);
   opacity: 1;
-  box-shadow: 0 0 15px rgba(122, 193, 67, 0.3), 0 0 30px rgba(122, 193, 67, 0.1);
+  box-shadow: 0 0 15px rgba(50, 141, 70, 0.3), 0 0 30px rgba(50, 141, 70, 0.1);
 }
 
 .header-inner {
@@ -109,22 +109,28 @@ header::after {
   letter-spacing: -0.02em;
 }
 
+.header-logo {
+  height: 40px;
+  width: auto;
+  filter: drop-shadow(0 0 20px rgba(50, 141, 70, 0.3));
+}
+
 .brand-name {
-  background: linear-gradient(135deg, var(--primary) 0%, #a0e86c 40%, var(--primary) 80%);
+  background: linear-gradient(135deg, #ffffff 0%, #e0e0e0 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
   font-weight: 900;
   letter-spacing: 0.06em;
-  filter: drop-shadow(0 0 25px rgba(122, 193, 67, 0.35));
+  filter: drop-shadow(0 0 25px rgba(50, 141, 70, 0.35));
 }
 
 .brand-x {
-  background: linear-gradient(135deg, var(--accent), #ffe066);
+  background: linear-gradient(135deg, var(--accent), var(--primary));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  filter: drop-shadow(0 0 15px rgba(245, 197, 24, 0.45));
+  filter: drop-shadow(0 0 15px rgba(50, 141, 70, 0.45));
 }
 
 .subtitle {
@@ -135,13 +141,13 @@ header::after {
 }
 
 .header-badge {
-  background: linear-gradient(135deg, rgba(122, 193, 67, 0.15), rgba(245, 197, 24, 0.1));
-  border: 1px solid rgba(122, 193, 67, 0.25);
+  background: linear-gradient(135deg, rgba(50, 141, 70, 0.15), rgba(182, 212, 105, 0.1));
+  border: 1px solid rgba(50, 141, 70, 0.25);
   padding: 0.5rem 1rem;
   border-radius: 20px;
   font-size: 0.8rem;
   font-weight: 600;
-  color: var(--primary);
+  color: var(--accent);
   letter-spacing: 0.04em;
   backdrop-filter: blur(8px);
   display: flex;
@@ -161,7 +167,7 @@ header::after {
   transform: translateX(-50%);
   width: 80%;
   height: 80px;
-  background: radial-gradient(ellipse at center, rgba(122, 193, 67, 0.12), rgba(245, 197, 24, 0.04) 40%, transparent 70%);
+  background: radial-gradient(ellipse at center, rgba(50, 141, 70, 0.12), rgba(182, 212, 105, 0.04) 40%, transparent 70%);
   pointer-events: none;
   animation: glowPulse 4s ease-in-out infinite alternate;
 }
