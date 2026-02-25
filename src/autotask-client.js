@@ -2,22 +2,50 @@ const fetch = require('node-fetch');
 
 class AutotaskClient {
   constructor({ apiUser, apiSecret, integrationCode, zone }) {
-    this.baseUrl = `${zone}/ATServicesRest/V1.0`;
+    // Validate and fix common zone URL mistakes
+    let cleanZone = (zone || '').trim().replace(/\/+$/, '');
+
+    // Detect web portal URLs and auto-correct to API URL
+    const portalMatch = cleanZone.match(/https?:\/\/ww(\d+)\.autotask\.net/i);
+    if (portalMatch) {
+      const zoneNum = portalMatch[1];
+      const corrected = `https://webservices${zoneNum}.autotask.net`;
+      console.warn(`[Autotask] WARNING: Zone "${cleanZone}" looks like the web portal, not the API.`);
+      console.warn(`[Autotask] Auto-correcting to "${corrected}"`);
+      console.warn(`[Autotask] Please update AUTOTASK_API_ZONE in your .env file to: ${corrected}`);
+      cleanZone = corrected;
+    }
+
+    this.zone = cleanZone;
+    this.baseUrl = `${cleanZone}/ATServicesRest/V1.0`;
     this.headers = {
       'Content-Type': 'application/json',
       'UserName': apiUser,
       'Secret': apiSecret,
       'ApiIntegrationCode': integrationCode,
     };
+
+    console.log(`[Autotask] Client initialized — Zone: ${cleanZone}`);
+    console.log(`[Autotask] API Base URL: ${this.baseUrl}`);
+    console.log(`[Autotask] API User: ${apiUser ? apiUser.substring(0, 3) + '***' : '(empty)'}`);
+    console.log(`[Autotask] Integration Code: ${integrationCode ? integrationCode.substring(0, 4) + '***' : '(empty)'}`);
   }
 
   async request(endpoint, method = 'GET', body = null) {
+    const url = `${this.baseUrl}${endpoint}`;
     const opts = { method, headers: this.headers };
     if (body) opts.body = JSON.stringify(body);
 
-    const res = await fetch(`${this.baseUrl}${endpoint}`, opts);
+    const res = await fetch(url, opts);
     if (!res.ok) {
       const text = await res.text();
+      let hint = '';
+      if (res.status === 401) {
+        hint = ' — Check AUTOTASK_API_USER, AUTOTASK_API_SECRET, and AUTOTASK_API_INTEGRATION_CODE in your .env file';
+      } else if (res.status === 403) {
+        hint = ' — Check AUTOTASK_API_ZONE in your .env file (should be https://webservicesN.autotask.net, not the web portal URL)';
+      }
+      console.error(`[Autotask] ${method} ${url} → ${res.status}${hint}`);
       throw new Error(`Autotask API ${res.status}: ${text}`);
     }
     return res.json();
