@@ -124,7 +124,8 @@ async function analyzeBatch(anthropic, tickets) {
     messages: [{ role: 'user', content: userMessage }],
   });
 
-  const text = response.content[0].text.trim();
+  const rawText = response.content[0].text.trim();
+  const text = stripCodeFences(rawText);
 
   try {
     const parsed = JSON.parse(text);
@@ -347,7 +348,8 @@ ${JSON.stringify(descriptions, null, 2)}`;
     messages: [{ role: 'user', content: userMessage }],
   });
 
-  const text = response.content[0].text.trim();
+  const rawText = response.content[0].text.trim();
+  const text = stripCodeFences(rawText);
 
   try {
     const parsed = JSON.parse(text);
@@ -373,6 +375,14 @@ ${JSON.stringify(descriptions, null, 2)}`;
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
+}
+
+/**
+ * Strip markdown code fences from AI response (e.g. ```json ... ```)
+ */
+function stripCodeFences(text) {
+  const fenced = text.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?\s*```$/);
+  return fenced ? fenced[1].trim() : text;
 }
 
 module.exports = { analyzeWithAI, mergeAIResults, generateBatchInsights, isConfigured };
