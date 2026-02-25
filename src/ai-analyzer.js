@@ -87,20 +87,27 @@ const INSIGHTS_TIMEOUT_MS = 120000; // 2 minutes per chunk
 /**
  * Analyze a batch of tickets using Claude.
  * Tickets should have at minimum: id, title, description (optional: resolution, priority)
+ * @param {Array} tickets
+ * @param {Function} [onProgress] - callback(completed, total) called after each batch
  */
-async function analyzeWithAI(tickets) {
+async function analyzeWithAI(tickets, onProgress) {
   const anthropic = getClient();
   if (!anthropic) {
     throw new Error('Anthropic API key not configured');
   }
 
   const results = [];
+  const totalBatches = Math.ceil(tickets.length / BATCH_SIZE);
 
   // Process in batches to manage context size and cost
   for (let i = 0; i < tickets.length; i += BATCH_SIZE) {
     const batch = tickets.slice(i, i + BATCH_SIZE);
     const batchResults = await analyzeBatch(anthropic, batch);
     results.push(...batchResults);
+    if (onProgress) {
+      const completedBatches = Math.floor(i / BATCH_SIZE) + 1;
+      onProgress({ phase: 'analyzing', completed: results.length, total: tickets.length, batch: completedBatches, totalBatches });
+    }
   }
 
   return results;
@@ -452,7 +459,7 @@ function mergeChunkInsights(chunkResults) {
  * For large ticket sets (>INSIGHTS_CHUNK_SIZE), tickets are processed in chunks
  * and the results are merged to avoid API timeouts and context window limits.
  */
-async function generateBatchInsights(tickets, analyzedTickets) {
+async function generateBatchInsights(tickets, analyzedTickets, onProgress) {
   const anthropic = getClient();
   if (!anthropic) {
     throw new Error('Anthropic API key not configured');
@@ -472,6 +479,7 @@ async function generateBatchInsights(tickets, analyzedTickets) {
       console.log(`[AI] Processing insights chunk ${i + 1}/${chunks.length} (${chunks[i].length} tickets)...`);
       const parsed = await analyzeInsightsChunk(anthropic, chunks[i], analyzedTickets.length, i, chunks.length);
       chunkResults.push(parsed);
+      if (onProgress) onProgress({ phase: 'insights', chunk: i + 1, totalChunks: chunks.length });
     } catch (chunkErr) {
       console.warn(`[AI] Insights chunk ${i + 1}/${chunks.length} failed: ${chunkErr.message}`);
       // Continue with remaining chunks — partial insights are better than none

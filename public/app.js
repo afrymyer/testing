@@ -405,7 +405,10 @@ async function runAIAnalysis() {
   const btn = $('#btn-ai');
   btn.disabled = true;
   btn.textContent = 'Analyzing...';
-  statusText.innerHTML = '<span class="loading-spinner"></span>Running Claude AI analysis on ' + ticketsToAnalyze.length + ' tickets...';
+  statusBar.className = 'status-bar ai-active';
+  statusText.innerHTML = '<span class="loading-spinner"></span> Starting AI analysis of ' + ticketsToAnalyze.length + ' tickets...';
+
+  const aiStartTime = Date.now();
 
   try {
     const res = await fetch('/api/ai-analyze', {
@@ -430,7 +433,57 @@ async function runAIAnalysis() {
       throw new Error(errMsg);
     }
 
-    const data = await res.json();
+    // Read SSE stream for progress updates
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let finalData = null;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      // Parse SSE events from the buffer
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // keep incomplete line in buffer
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const event = JSON.parse(line.slice(6));
+          const elapsed = ((Date.now() - aiStartTime) / 1000).toFixed(0);
+
+          if (event.type === 'progress') {
+            // Build progress bar for analyzing phase
+            let progressHtml = `<span class="loading-spinner"></span> ${escHtml(event.message)}`;
+            if (event.phase === 'analyzing' && event.total > 0) {
+              const pct = Math.round((event.completed / event.total) * 100);
+              progressHtml += `<div class="ai-progress-bar"><div class="ai-progress-fill" style="width:${pct}%"></div></div>`;
+            }
+            progressHtml += `<span class="ai-elapsed">${elapsed}s</span>`;
+            statusText.innerHTML = progressHtml;
+            // Update button text with batch count
+            if (event.batch && event.totalBatches) {
+              btn.textContent = `Analyzing (${event.batch}/${event.totalBatches})...`;
+            } else if (event.phase === 'insights') {
+              btn.textContent = 'Generating insights...';
+            }
+          } else if (event.type === 'done') {
+            finalData = event.result;
+          } else if (event.type === 'error') {
+            throw new Error(event.error);
+          }
+        } catch (parseErr) {
+          if (parseErr.message && !parseErr.message.includes('JSON')) throw parseErr;
+          // Ignore JSON parse errors from partial lines
+        }
+      }
+    }
+
+    if (!finalData) throw new Error('AI analysis ended without results');
+
+    const data = finalData;
     allTickets = data.tickets;
     currentAnalytics = data.analytics;
     currentBatchInsights = data.batchInsights || null;

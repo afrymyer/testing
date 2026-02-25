@@ -264,14 +264,41 @@ app.post('/api/ai-analyze', async (req, res) => {
       return res.status(400).json({ error: 'tickets must be a non-empty array' });
     }
 
+    // Set up SSE streaming for progress updates
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+    });
+
+    function sendProgress(data) {
+      res.write(`data: ${JSON.stringify(data)}\n\n`);
+    }
+
     console.log(`[AI] Starting AI analysis of ${tickets.length} tickets...`);
     const startTime = Date.now();
+
+    sendProgress({ type: 'progress', phase: 'keyword', message: 'Running keyword analysis...' });
 
     // Run keyword analysis first
     const keywordAnalyzed = analyzeTickets(tickets);
 
-    // Run AI analysis
-    const aiResults = await analyzeWithAI(tickets);
+    sendProgress({ type: 'progress', phase: 'analyzing', message: `Analyzing ${tickets.length} tickets with AI...`, completed: 0, total: tickets.length });
+
+    // Run AI analysis with progress callback
+    const aiResults = await analyzeWithAI(tickets, (progress) => {
+      sendProgress({
+        type: 'progress',
+        phase: 'analyzing',
+        message: `Analyzing tickets with AI... (${progress.completed}/${progress.total})`,
+        completed: progress.completed,
+        total: progress.total,
+        batch: progress.batch,
+        totalBatches: progress.totalBatches,
+      });
+    });
+
+    sendProgress({ type: 'progress', phase: 'merging', message: 'Merging AI results...' });
 
     // Merge AI results into keyword-analyzed tickets
     const merged = mergeAIResults(keywordAnalyzed, aiResults);
@@ -283,12 +310,19 @@ app.post('/api/ai-analyze', async (req, res) => {
     // Generate batch-level strategic insights (with overall timeout guard)
     let batchInsights = null;
     try {
+      sendProgress({ type: 'progress', phase: 'insights', message: 'Generating strategic insights...' });
       console.log(`[AI] Generating batch-level insights...`);
       const insightsTimeout = new Promise((_, reject) =>
         setTimeout(() => reject(new Error('Batch insights overall timeout (5 min)')), 300000)
       );
       batchInsights = await Promise.race([
-        generateBatchInsights(tickets, merged),
+        generateBatchInsights(tickets, merged, (progress) => {
+          sendProgress({
+            type: 'progress',
+            phase: 'insights',
+            message: `Generating strategic insights... (chunk ${progress.chunk}/${progress.totalChunks})`,
+          });
+        }),
         insightsTimeout,
       ]);
     } catch (batchErr) {
@@ -300,21 +334,32 @@ app.post('/api/ai-analyze', async (req, res) => {
     const categoryChanges = merged.filter((t) => t.aiInsights && t.aiInsights.categoryChanged).length;
     console.log(`[AI] Analysis complete in ${elapsed}s. ${aiEnhanced} tickets enhanced, ${categoryChanges} categories changed.`);
 
-    res.json({
-      tickets: merged,
-      summary,
-      analytics,
-      batchInsights,
-      priorityMap,
-      aiStats: {
-        enhanced: aiEnhanced,
-        categoryChanges,
-        elapsedSeconds: parseFloat(elapsed),
+    // Send the final result as a 'done' event
+    sendProgress({
+      type: 'done',
+      result: {
+        tickets: merged,
+        summary,
+        analytics,
+        batchInsights,
+        priorityMap,
+        aiStats: {
+          enhanced: aiEnhanced,
+          categoryChanges,
+          elapsedSeconds: parseFloat(elapsed),
+        },
       },
     });
+    res.end();
   } catch (err) {
     console.error('[AI] Analysis failed:', err.message);
-    res.status(500).json({ error: `AI analysis failed: ${err.message}` });
+    // If headers already sent (SSE mode), send error as event
+    if (res.headersSent) {
+      res.write(`data: ${JSON.stringify({ type: 'error', error: `AI analysis failed: ${err.message}` })}\n\n`);
+      res.end();
+    } else {
+      res.status(500).json({ error: `AI analysis failed: ${err.message}` });
+    }
   }
 });
 

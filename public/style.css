@@ -2062,6 +2062,30 @@ main {
   color: #c4b5fd;
 }
 
+.ai-progress-bar {
+  display: inline-block;
+  width: 180px;
+  height: 8px;
+  background: rgba(139, 92, 246, 0.15);
+  border-radius: 4px;
+  overflow: hidden;
+  vertical-align: middle;
+  margin: 0 0.5rem;
+}
+
+.ai-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--ai-purple), #a78bfa);
+  border-radius: 4px;
+  transition: width 0.4s ease;
+}
+
+.ai-elapsed {
+  font-size: 0.8rem;
+  opacity: 0.7;
+  margin-left: 0.25rem;
+}
+
 .badge-ai {
   background: linear-gradient(135deg, rgba(139, 92, 246, 0.25), rgba(109, 40, 217, 0.25));
   color: #c4b5fd;
