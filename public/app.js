@@ -395,8 +395,19 @@ async function runAIAnalysis() {
     });
 
     if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error);
+      let errMsg = `HTTP ${res.status}`;
+      try {
+        const errData = await res.json();
+        errMsg = errData.error || errMsg;
+      } catch {
+        const text = await res.text().catch(() => '');
+        if (text.startsWith('<!DOCTYPE') || text.startsWith('<html')) {
+          errMsg = `Server returned HTML instead of JSON (HTTP ${res.status}). The server may have crashed — check the terminal for errors.`;
+        } else if (text) {
+          errMsg = text.substring(0, 500);
+        }
+      }
+      throw new Error(errMsg);
     }
 
     const data = await res.json();
@@ -416,7 +427,15 @@ async function runAIAnalysis() {
     btn.textContent = 'Re-Analyze with AI';
   } catch (err) {
     statusBar.className = 'status-bar error';
-    statusText.textContent = `AI Error: ${err.message}`;
+    statusText.innerHTML = '';
+    const errEl = document.createElement('div');
+    errEl.className = 'error-detail';
+    errEl.innerHTML = `
+      <strong>AI Analysis Failed</strong><br>
+      <span class="error-message">${escHtml(err.message).replace(/\n/g, '<br>')}</span>
+    `;
+    statusText.appendChild(errEl);
+    console.error('[AI Error]', err);
   } finally {
     btn.disabled = false;
   }
