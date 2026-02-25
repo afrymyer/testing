@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=8">
+  <link rel="stylesheet" href="style.css?v=9">
 </head>
 <body>
   <header>
@@ -317,14 +317,9 @@
       </div>
     </section>
 
-    <!-- Ticket List (hidden — tickets now render inside AI Insights tab) -->
-    <section id="ticket-list" class="ticket-list" style="display:none;">
-      <div class="section-header">
-        <h2>Analyzed Tickets</h2>
-        <span id="ticket-count-label" class="count-label"></span>
-      </div>
-      <div id="tickets"></div>
-    </section>
+    <!-- Ticket list now renders inside AI & Tickets tab -->
+    <section id="ticket-list" style="display:none !important;"></section>
+    <div id="tickets" style="display:none !important;"></div>
 
     <!-- Script Viewer Modal -->
     <div id="script-modal" class="modal hidden">
@@ -387,6 +382,6 @@
     <span class="footer-ai">AI-Powered</span>
   </footer>
 
-  <script src="app.js?v=8"></script>
+  <script src="app.js?v=9"></script>
 </body>
 </html>
