@@ -206,7 +206,7 @@ main {
 /* === Controls === */
 .controls {
   position: relative;
-  z-index: 10;
+  z-index: 200;
   background: var(--surface);
   backdrop-filter: blur(16px);
   border: 1px solid var(--glass-border);
