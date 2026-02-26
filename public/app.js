@@ -166,7 +166,6 @@ async function loadQueues() {
     const container = $('#queue-options');
 
     for (const q of queues) {
-      if (!q.isActive) continue;
       const label = document.createElement('label');
       label.className = 'multi-select-option';
       label.innerHTML = `<input type="checkbox" value="${q.value}" /> ${escHtml(q.label)}`;
