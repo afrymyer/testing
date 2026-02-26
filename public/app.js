@@ -561,6 +561,10 @@ function renderAnalytics(analytics, summary) {
   // SDE Metrics tab
   renderSDEMetrics();
 
+  // Time Analysis (always render when data available)
+  renderTimeAnalysis(analytics.timeAnalysis);
+  renderTimeLeaks(analytics.timeAnalysis);
+
   // AI Insights tab (show placeholder if not yet analyzed)
   if (!aiAnalyzed) renderAIInsights(null);
 }
@@ -932,6 +936,160 @@ function renderAIInsights(insights) {
   }
 }
 
+// ── Time Analysis ──
+function renderTimeAnalysis(timeAnalysis) {
+  const summaryEl = $('#time-analysis-summary');
+  const catEl = $('#time-analysis-categories');
+
+  if (!timeAnalysis || !timeAnalysis.summary) {
+    summaryEl.innerHTML = `
+      <div class="empty-state">
+        <h3>No Time Data Available</h3>
+        <p>Time analysis requires tickets with logged hours. Fetch tickets with time entries to see actual vs expected comparisons.</p>
+      </div>`;
+    catEl.innerHTML = '';
+    return;
+  }
+
+  const s = timeAnalysis.summary;
+  const effClass = s.overallEfficiencyPct >= 80 ? 'time-good' : s.overallEfficiencyPct >= 50 ? 'time-warn' : 'time-bad';
+
+  summaryEl.innerHTML = `
+    <h3>Time Efficiency Overview</h3>
+    <p class="panel-desc">Comparing actual hours worked against baseline expected time across ${s.ticketsWithTime} tickets with logged time</p>
+    <div class="time-summary-grid">
+      <div class="time-summary-card">
+        <div class="time-summary-number">${s.totalActualHours}h</div>
+        <div class="time-summary-label">Actual Time Worked</div>
+      </div>
+      <div class="time-summary-card">
+        <div class="time-summary-number">${s.totalExpectedHours}h</div>
+        <div class="time-summary-label">Expected Baseline</div>
+      </div>
+      <div class="time-summary-card ${s.totalOverageHours > 0 ? 'time-overage' : 'time-under'}">
+        <div class="time-summary-number">${s.totalOverageHours > 0 ? '+' : ''}${s.totalOverageHours}h</div>
+        <div class="time-summary-label">${s.totalOverageHours > 0 ? 'Over Baseline' : 'Under Baseline'}</div>
+      </div>
+      <div class="time-summary-card ${effClass}">
+        <div class="time-summary-number">${s.overallEfficiencyPct != null ? s.overallEfficiencyPct + '%' : 'N/A'}</div>
+        <div class="time-summary-label">Efficiency Rating</div>
+      </div>
+    </div>`;
+
+  // Category breakdown table with visual bars
+  const cats = timeAnalysis.byCategory.filter(c => c.ticketsWithTime > 0);
+  if (cats.length === 0) {
+    catEl.innerHTML = '';
+    return;
+  }
+
+  const maxActual = Math.max(...cats.map(c => c.avgActualMin));
+
+  catEl.innerHTML = `
+    <h3>Time by Category</h3>
+    <p class="panel-desc">Average actual vs expected time per ticket, by category</p>
+    <div class="time-cat-list">
+      ${cats.map(c => {
+        const actualPct = maxActual > 0 ? (c.avgActualMin / maxActual) * 100 : 0;
+        const expectedPct = maxActual > 0 ? (c.avgExpectedMin / maxActual) * 100 : 0;
+        const delta = c.avgActualMin - c.avgExpectedMin;
+        const deltaClass = delta > 0 ? 'time-over' : 'time-under';
+        const effLabel = c.efficiencyPct != null ? c.efficiencyPct + '%' : '—';
+        const effClass = c.efficiencyPct >= 80 ? 'time-good' : c.efficiencyPct >= 50 ? 'time-warn' : 'time-bad';
+        return `
+          <div class="time-cat-row">
+            <div class="time-cat-header">
+              <span class="time-cat-name">${escHtml(c.category)}</span>
+              <span class="time-cat-count">${c.ticketsWithTime} tickets</span>
+              <span class="time-cat-eff ${effClass}">${effLabel} eff</span>
+            </div>
+            <div class="time-cat-bars">
+              <div class="time-bar-row">
+                <span class="time-bar-label">Actual</span>
+                <div class="time-bar-track">
+                  <div class="time-bar-fill time-bar-actual" style="width: ${actualPct}%"></div>
+                </div>
+                <span class="time-bar-value">${c.avgActualMin}m</span>
+              </div>
+              <div class="time-bar-row">
+                <span class="time-bar-label">Expected</span>
+                <div class="time-bar-track">
+                  <div class="time-bar-fill time-bar-expected" style="width: ${expectedPct}%"></div>
+                </div>
+                <span class="time-bar-value">${c.avgExpectedMin}m</span>
+              </div>
+            </div>
+            <div class="time-cat-delta ${deltaClass}">${delta > 0 ? '+' : ''}${delta}m avg delta</div>
+          </div>`;
+      }).join('')}
+    </div>`;
+}
+
+function renderTimeLeaks(timeAnalysis) {
+  const summaryEl = $('#time-leaks-summary');
+  const listEl = $('#time-leaks-list');
+
+  if (!timeAnalysis || !timeAnalysis.timeLeaks || timeAnalysis.timeLeaks.length === 0) {
+    summaryEl.innerHTML = `
+      <div class="empty-state">
+        <h3>No Time Leaks Detected</h3>
+        <p>No tickets found where actual time significantly exceeded the expected baseline. This is a good sign for operational efficiency.</p>
+      </div>`;
+    listEl.innerHTML = '';
+    return;
+  }
+
+  const leaks = timeAnalysis.timeLeaks;
+  const totalLost = timeAnalysis.totalTimeLostMinutes;
+  const totalLostHrs = Math.round(totalLost / 60 * 10) / 10;
+
+  summaryEl.innerHTML = `
+    <h3>Time Leak Summary</h3>
+    <p class="panel-desc">Tickets where actual time exceeded expected baseline by more than 50%. These represent opportunities to improve processes or identify recurring blockers.</p>
+    <div class="time-leak-stats">
+      <div class="time-leak-stat">
+        <div class="time-leak-stat-number">${leaks.length}</div>
+        <div class="time-leak-stat-label">Tickets Over Baseline</div>
+      </div>
+      <div class="time-leak-stat time-leak-stat-alert">
+        <div class="time-leak-stat-number">${totalLostHrs}h</div>
+        <div class="time-leak-stat-label">Total Time Lost</div>
+      </div>
+    </div>`;
+
+  listEl.innerHTML = `
+    <h3>Time Leak Details</h3>
+    <table class="data-table time-leak-table">
+      <thead>
+        <tr>
+          <th>Ticket</th>
+          <th>Category</th>
+          <th>Expected</th>
+          <th>Actual</th>
+          <th>Overage</th>
+          <th>% Over</th>
+          <th>Tech</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${leaks.map(l => {
+          const overClass = l.overagePct >= 200 ? 'time-leak-critical' : l.overagePct >= 100 ? 'time-leak-high' : 'time-leak-moderate';
+          const techName = getResourceName(l.assignedResourceID) || '—';
+          return `
+            <tr class="${overClass}" onclick="openTicketDetail('${l.ticketId}')" style="cursor:pointer">
+              <td><strong>#${l.ticketNumber || l.ticketId}</strong><br><span class="time-leak-title">${escHtml(l.title)}</span></td>
+              <td><span class="badge badge-category">${escHtml(l.category)}</span></td>
+              <td>${l.expectedMinutes}m</td>
+              <td>${l.actualMinutes}m</td>
+              <td class="time-leak-overage">+${l.overageMinutes}m</td>
+              <td><span class="badge ${overClass}">+${l.overagePct}%</span></td>
+              <td>${escHtml(techName)}</td>
+            </tr>`;
+        }).join('')}
+      </tbody>
+    </table>`;
+}
+
 // ── Render Tickets ──
 function renderTickets(tickets) {
   if (!tickets.length) {
@@ -1178,6 +1336,19 @@ function setupTabs() {
       btn.classList.add('active');
       const tabId = btn.getAttribute('data-tab');
       document.getElementById(tabId).classList.add('active');
+    });
+  });
+
+  // Sub-tab switching inside AI & Tickets
+  const subTabBtns = document.querySelectorAll('.sub-tab-btn');
+  subTabBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      subTabBtns.forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.sub-tab-panel').forEach(p => p.classList.remove('active'));
+
+      btn.classList.add('active');
+      const subId = btn.getAttribute('data-subtab');
+      document.getElementById(subId).classList.add('active');
     });
   });
 }

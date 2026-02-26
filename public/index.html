@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=9">
+  <link rel="stylesheet" href="style.css?v=10">
 </head>
 <body>
   <header>
@@ -288,18 +288,44 @@
 
       <!-- Tab: AI Insights (shown after AI analysis) -->
       <div id="tab-ai-insights" class="tab-panel">
-        <div class="panel-card ai-insights-exec" id="ai-exec-summary"></div>
-        <div class="panel-card" id="ai-systemic-issues"></div>
-        <div class="panel-card" id="ai-strategic-recs"></div>
-        <div class="panel-card" id="ai-workload-insights"></div>
-        <div class="panel-card" id="ai-auto-opportunities"></div>
-        <!-- Inline ticket list (shown after AI analysis) -->
-        <div id="ai-ticket-list" class="panel-card" style="display:none;">
-          <div class="section-header">
-            <h3>Analyzed Tickets</h3>
-            <span id="ai-ticket-count-label" class="count-label"></span>
+        <!-- Sub-tab bar -->
+        <div class="sub-tab-bar">
+          <button class="sub-tab-btn active" data-subtab="subtab-ai-insights">AI Insights</button>
+          <button class="sub-tab-btn" data-subtab="subtab-time-analysis">Time Analysis</button>
+          <button class="sub-tab-btn" data-subtab="subtab-time-leaks">Time Leaks</button>
+          <button class="sub-tab-btn" data-subtab="subtab-tickets">Tickets</button>
+        </div>
+
+        <!-- Sub-tab: AI Insights -->
+        <div id="subtab-ai-insights" class="sub-tab-panel active">
+          <div class="panel-card ai-insights-exec" id="ai-exec-summary"></div>
+          <div class="panel-card" id="ai-systemic-issues"></div>
+          <div class="panel-card" id="ai-strategic-recs"></div>
+          <div class="panel-card" id="ai-workload-insights"></div>
+          <div class="panel-card" id="ai-auto-opportunities"></div>
+        </div>
+
+        <!-- Sub-tab: Time Analysis -->
+        <div id="subtab-time-analysis" class="sub-tab-panel">
+          <div class="panel-card" id="time-analysis-summary"></div>
+          <div class="panel-card" id="time-analysis-categories"></div>
+        </div>
+
+        <!-- Sub-tab: Time Leaks -->
+        <div id="subtab-time-leaks" class="sub-tab-panel">
+          <div class="panel-card" id="time-leaks-summary"></div>
+          <div class="panel-card" id="time-leaks-list"></div>
+        </div>
+
+        <!-- Sub-tab: Tickets -->
+        <div id="subtab-tickets" class="sub-tab-panel">
+          <div id="ai-ticket-list" class="panel-card" style="display:none;">
+            <div class="section-header">
+              <h3>Analyzed Tickets</h3>
+              <span id="ai-ticket-count-label" class="count-label"></span>
+            </div>
+            <div id="ai-tickets"></div>
           </div>
-          <div id="ai-tickets"></div>
         </div>
       </div>
 
@@ -382,6 +408,6 @@
     <span class="footer-ai">AI-Powered</span>
   </footer>
 
-  <script src="app.js?v=9"></script>
+  <script src="app.js?v=10"></script>
 </body>
 </html>

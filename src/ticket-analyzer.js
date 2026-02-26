@@ -779,12 +779,97 @@ function getDeepAnalytics(analyzedTickets, rawTickets = [], options = {}) {
     hourlyRateUsed: avgHourlyRate,
   };
 
+  // ── Time Analysis: actual vs expected vs budgeted ──
+  const timeByCategory = {};
+  const timeLeaks = [];
+
+  for (const t of analyzedTickets) {
+    if (t.categoryLabel === 'Needs Review' || t.categoryLabel === 'Uncategorized') continue;
+    const actualMin = (t.workedHours || 0) * 60;
+    const expectedMin = t.estimatedMinutes || 0;
+    const budgetedMin = (t.resolutionPlanHours != null ? t.resolutionPlanHours : 0) * 60;
+
+    if (!timeByCategory[t.categoryLabel]) {
+      timeByCategory[t.categoryLabel] = {
+        count: 0,
+        totalActual: 0,
+        totalExpected: 0,
+        totalBudgeted: 0,
+        ticketsWithTime: 0,
+        ticketsWithBudget: 0,
+      };
+    }
+    const tc = timeByCategory[t.categoryLabel];
+    tc.count++;
+    if (actualMin > 0) { tc.totalActual += actualMin; tc.ticketsWithTime++; }
+    tc.totalExpected += expectedMin;
+    if (budgetedMin > 0) { tc.totalBudgeted += budgetedMin; tc.ticketsWithBudget++; }
+
+    // Flag time leaks: actual time significantly exceeds expected time
+    if (actualMin > 0 && expectedMin > 0) {
+      const overageMin = actualMin - expectedMin;
+      const overagePct = Math.round((overageMin / expectedMin) * 100);
+      if (overagePct > 50 && overageMin > 10) {
+        timeLeaks.push({
+          ticketId: t.ticketId,
+          ticketNumber: t.ticketNumber,
+          title: t.title,
+          category: t.categoryLabel,
+          actualMinutes: Math.round(actualMin),
+          expectedMinutes: expectedMin,
+          budgetedMinutes: budgetedMin > 0 ? Math.round(budgetedMin) : null,
+          overageMinutes: Math.round(overageMin),
+          overagePct,
+          assignedResourceID: t.assignedResourceID,
+        });
+      }
+    }
+  }
+
+  const timeCategoryBreakdown = Object.entries(timeByCategory)
+    .map(([label, tc]) => ({
+      category: label,
+      count: tc.count,
+      avgActualMin: tc.ticketsWithTime ? Math.round(tc.totalActual / tc.ticketsWithTime) : 0,
+      avgExpectedMin: tc.count ? Math.round(tc.totalExpected / tc.count) : 0,
+      avgBudgetedMin: tc.ticketsWithBudget ? Math.round(tc.totalBudgeted / tc.ticketsWithBudget) : 0,
+      totalActualMin: Math.round(tc.totalActual),
+      totalExpectedMin: Math.round(tc.totalExpected),
+      totalBudgetedMin: Math.round(tc.totalBudgeted),
+      ticketsWithTime: tc.ticketsWithTime,
+      ticketsWithBudget: tc.ticketsWithBudget,
+      efficiencyPct: tc.ticketsWithTime && tc.totalExpected > 0
+        ? Math.round((tc.totalExpected / tc.totalActual) * 100)
+        : null,
+    }))
+    .sort((a, b) => b.totalActualMin - a.totalActualMin);
+
+  // Summary stats
+  const ticketsWithTime = analyzedTickets.filter(t => (t.workedHours || 0) > 0 && t.categoryLabel !== 'Needs Review' && t.categoryLabel !== 'Uncategorized');
+  const totalActualMin = ticketsWithTime.reduce((s, t) => s + (t.workedHours || 0) * 60, 0);
+  const totalExpectedMin = ticketsWithTime.reduce((s, t) => s + (t.estimatedMinutes || 0), 0);
+  const totalOverageMin = totalActualMin - totalExpectedMin;
+
+  const timeAnalysis = {
+    summary: {
+      ticketsWithTime: ticketsWithTime.length,
+      totalActualHours: Math.round(totalActualMin / 60 * 10) / 10,
+      totalExpectedHours: Math.round(totalExpectedMin / 60 * 10) / 10,
+      totalOverageHours: Math.round(totalOverageMin / 60 * 10) / 10,
+      overallEfficiencyPct: totalExpectedMin > 0 ? Math.round((totalExpectedMin / totalActualMin) * 100) : null,
+    },
+    byCategory: timeCategoryBreakdown,
+    timeLeaks: timeLeaks.sort((a, b) => b.overageMinutes - a.overageMinutes),
+    totalTimeLostMinutes: timeLeaks.reduce((s, t) => s + t.overageMinutes, 0),
+  };
+
   return {
     priorityBreakdown,
     categoryDeepBreakdown,
     trendData,
     topOpportunities,
     roiProjection,
+    timeAnalysis,
   };
 }
 

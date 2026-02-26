@@ -2682,6 +2682,267 @@ main {
   align-items: center;
 }
 
+/* === Sub-Tab Bar (inside AI & Tickets) === */
+.sub-tab-bar {
+  display: flex;
+  gap: 0.25rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.25rem;
+  margin-bottom: 1rem;
+}
+
+.sub-tab-btn {
+  padding: 0.45rem 0.9rem;
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.sub-tab-btn:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.sub-tab-btn.active {
+  color: #fff;
+  background: linear-gradient(135deg, rgba(122, 193, 67, 0.2), rgba(122, 193, 67, 0.1));
+  border: 1px solid rgba(122, 193, 67, 0.25);
+}
+
+.sub-tab-panel {
+  display: none;
+}
+
+.sub-tab-panel.active {
+  display: block;
+}
+
+/* === Time Analysis === */
+.time-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.time-summary-card {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1rem;
+  text-align: center;
+}
+
+.time-summary-card.time-overage {
+  border-color: rgba(239, 68, 68, 0.3);
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.08), transparent);
+}
+
+.time-summary-card.time-under {
+  border-color: rgba(122, 193, 67, 0.3);
+  background: linear-gradient(135deg, rgba(122, 193, 67, 0.08), transparent);
+}
+
+.time-summary-card.time-good {
+  border-color: rgba(122, 193, 67, 0.3);
+  background: linear-gradient(135deg, rgba(122, 193, 67, 0.08), transparent);
+}
+
+.time-summary-card.time-warn {
+  border-color: rgba(250, 204, 21, 0.3);
+  background: linear-gradient(135deg, rgba(250, 204, 21, 0.08), transparent);
+}
+
+.time-summary-card.time-bad {
+  border-color: rgba(239, 68, 68, 0.3);
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.08), transparent);
+}
+
+.time-summary-number {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.time-summary-label {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  margin-top: 0.2rem;
+}
+
+/* Time Category Breakdown */
+.time-cat-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.time-cat-row {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 0.9rem 1rem;
+}
+
+.time-cat-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.time-cat-name {
+  font-weight: 600;
+  font-size: 0.88rem;
+  color: var(--text);
+  flex: 1;
+}
+
+.time-cat-count {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+.time-cat-eff {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+  border-radius: 10px;
+}
+
+.time-cat-eff.time-good { color: var(--green); background: rgba(122, 193, 67, 0.1); }
+.time-cat-eff.time-warn { color: var(--yellow); background: rgba(250, 204, 21, 0.1); }
+.time-cat-eff.time-bad { color: var(--red, #ef4444); background: rgba(239, 68, 68, 0.1); }
+
+.time-cat-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.time-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.time-bar-label {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  width: 55px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.time-bar-track {
+  flex: 1;
+  height: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.time-bar-fill {
+  height: 100%;
+  border-radius: 5px;
+  transition: width 0.5s ease;
+}
+
+.time-bar-actual {
+  background: linear-gradient(90deg, rgba(239, 68, 68, 0.7), rgba(239, 68, 68, 0.4));
+}
+
+.time-bar-expected {
+  background: linear-gradient(90deg, rgba(122, 193, 67, 0.7), rgba(122, 193, 67, 0.4));
+}
+
+.time-bar-value {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  width: 40px;
+  flex-shrink: 0;
+}
+
+.time-cat-delta {
+  font-size: 0.75rem;
+  font-weight: 600;
+  margin-top: 0.35rem;
+  text-align: right;
+}
+
+.time-cat-delta.time-over { color: rgba(239, 68, 68, 0.85); }
+.time-cat-delta.time-under { color: rgba(122, 193, 67, 0.85); }
+
+/* Time Leak Stats */
+.time-leak-stats {
+  display: flex;
+  gap: 1rem;
+  margin-top: 0.75rem;
+}
+
+.time-leak-stat {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1rem 1.5rem;
+  text-align: center;
+  flex: 1;
+}
+
+.time-leak-stat-alert {
+  border-color: rgba(239, 68, 68, 0.3);
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.08), transparent);
+}
+
+.time-leak-stat-number {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.time-leak-stat-label {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  margin-top: 0.2rem;
+}
+
+/* Time Leak Table */
+.time-leak-table td {
+  vertical-align: middle;
+}
+
+.time-leak-title {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  display: block;
+  max-width: 250px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.time-leak-overage {
+  color: rgba(239, 68, 68, 0.9);
+  font-weight: 600;
+}
+
+tr.time-leak-critical td { border-left: 3px solid rgba(239, 68, 68, 0.6); }
+tr.time-leak-high td:first-child { border-left: 3px solid rgba(250, 204, 21, 0.6); }
+tr.time-leak-moderate td:first-child { border-left: 3px solid rgba(122, 193, 67, 0.3); }
+
+.badge.time-leak-critical { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+.badge.time-leak-high { background: rgba(250, 204, 21, 0.15); color: #facc15; }
+.badge.time-leak-moderate { background: rgba(122, 193, 67, 0.15); color: var(--green); }
+
 /* === ROI Cards (updated) === */
 .roi-card {
   background: linear-gradient(135deg, var(--surface-2) 0%, var(--surface) 100%);
