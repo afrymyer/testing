@@ -123,11 +123,26 @@ app.get('/api/tickets', async (req, res) => {
       }
     }
 
-    // Attach workedHours and assignedResourceID to each ticket before analysis
+    // Resolve company names from Autotask
+    let companyNameMap = {};
+    if (autotaskClient) {
+      try {
+        const companyIds = [...new Set(tickets.map(t => t.companyID).filter(Boolean))];
+        if (companyIds.length > 0) {
+          companyNameMap = await autotaskClient.getCompanyNames(companyIds);
+          console.log(`[API] Company names resolved: ${Object.keys(companyNameMap).length}/${companyIds.length}`);
+        }
+      } catch (err) {
+        console.warn(`[API] Company name resolution failed: ${err.message}`);
+      }
+    }
+
+    // Attach workedHours, assignedResourceID, and companyName to each ticket before analysis
     const enrichedTickets = tickets.map(t => ({
       ...t,
       workedHours: hoursMap[t.id] || 0,
       assignedResourceID: t.assignedResourceID || null,
+      companyName: companyNameMap[t.companyID] || null,
     }));
 
     // Filter out zero worked-hours tickets if requested

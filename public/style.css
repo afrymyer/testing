@@ -3045,6 +3045,207 @@ tr.time-leak-moderate td:first-child { border-left: 3px solid rgba(122, 193, 67,
 .ticket-card:nth-child(9) { animation-delay: 0.32s; }
 .ticket-card:nth-child(10) { animation-delay: 0.36s; }
 
+/* === Overview Grid === */
+.overview-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.2rem;
+  margin-bottom: 1.2rem;
+}
+
+.overview-grid .panel-card {
+  margin-bottom: 0;
+}
+
+/* === Peak Hours Chart === */
+.peak-hours-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 100px;
+  margin-top: 0.75rem;
+  padding: 0 0.25rem;
+}
+
+.peak-hour-bar {
+  flex: 1;
+  min-width: 0;
+  background: var(--primary);
+  border-radius: 2px 2px 0 0;
+  position: relative;
+  transition: background 0.2s;
+}
+
+.peak-hour-bar.peak-high {
+  background: var(--yellow);
+}
+
+.peak-hour-bar.peak-top {
+  background: var(--red);
+}
+
+.peak-hours-labels {
+  display: flex;
+  gap: 3px;
+  padding: 0 0.25rem;
+  margin-top: 2px;
+}
+
+.peak-hours-labels span {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.6rem;
+  color: var(--text-dim);
+  text-align: center;
+}
+
+/* === Client Insights === */
+.client-insights-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.5rem;
+}
+
+.client-row {
+  display: grid;
+  grid-template-columns: 2fr 80px 3fr;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.8rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: border-color 0.2s;
+}
+
+.client-row:hover {
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.client-name {
+  font-weight: 600;
+  font-size: 0.88rem;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.client-count {
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--accent);
+  text-align: center;
+}
+
+.client-issues {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.client-issue-badge {
+  font-size: 0.72rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 100px;
+  background: var(--ai-purple-dim);
+  color: var(--cyan);
+  border: 1px solid rgba(55, 134, 222, 0.2);
+  white-space: nowrap;
+}
+
+.client-note {
+  grid-column: 1 / -1;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  padding-top: 0.25rem;
+  border-top: 1px solid var(--border);
+  margin-top: 0.25rem;
+}
+
+.client-summary {
+  font-size: 0.85rem;
+  color: var(--text);
+  line-height: 1.5;
+  margin-bottom: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--glass);
+  border-radius: var(--radius);
+  border-left: 3px solid var(--accent);
+}
+
+/* === Service Delivery === */
+.service-delivery-assessment {
+  font-size: 0.88rem;
+  color: var(--text);
+  line-height: 1.6;
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+  background: var(--glass);
+  border-radius: var(--radius);
+  border-left: 3px solid var(--cyan);
+}
+
+.service-delivery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+.service-improvement-card {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.8rem 1rem;
+  transition: border-color 0.2s;
+}
+
+.service-improvement-card:hover {
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.service-improvement-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.35rem;
+}
+
+.service-improvement-area {
+  font-weight: 600;
+  font-size: 0.88rem;
+  color: var(--text);
+}
+
+.service-improvement-finding {
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  margin-bottom: 0.35rem;
+  line-height: 1.4;
+}
+
+.service-improvement-rec {
+  font-size: 0.82rem;
+  color: var(--accent);
+  line-height: 1.4;
+}
+
+.service-strengths {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.service-strength {
+  padding: 0.35rem 0.75rem;
+  background: rgba(50, 141, 70, 0.12);
+  border: 1px solid rgba(50, 141, 70, 0.25);
+  border-radius: 100px;
+  font-size: 0.8rem;
+  color: var(--green);
+}
+
 @media (max-width: 768px) {
   .controls-row { flex-direction: column; align-items: stretch; }
   .controls-filters { gap: 0.5rem; }
@@ -3057,4 +3258,7 @@ tr.time-leak-moderate td:first-child { border-left: 3px solid rgba(122, 193, 67,
   .ai-exec-banner { flex-direction: column; }
   .header-inner { flex-direction: column; gap: 0.75rem; text-align: center; }
   .header-badge { align-self: center; }
+  .overview-grid { grid-template-columns: 1fr; }
+  .client-row { grid-template-columns: 1fr auto; }
+  .client-issues { grid-column: 1 / -1; }
 }

@@ -281,6 +281,15 @@ function buildInsightsSummary(analyzedTickets) {
   let escalationCount = 0;
   const descriptions = [];
 
+  // Time-of-day and day-of-week distributions
+  const hourlyDistribution = new Array(24).fill(0);
+  const dayOfWeekDistribution = { Sun: 0, Mon: 0, Tue: 0, Wed: 0, Thu: 0, Fri: 0, Sat: 0 };
+  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+  // Company/client distribution
+  const companyTicketCount = {};
+  const companyCategoryMap = {};
+
   for (const t of analyzedTickets) {
     const cat = t.aiInsights?.categoryLabel || t.categoryLabel || 'Unknown';
     categoryCount[cat] = (categoryCount[cat] || 0) + 1;
@@ -291,6 +300,23 @@ function buildInsightsSummary(analyzedTickets) {
     totalAutoScore += t.automationScore || 0;
     if (t.aiInsights?.escalation) escalationCount++;
 
+    // Compute time distributions from createDate
+    if (t.createDate) {
+      const d = new Date(t.createDate);
+      if (!isNaN(d.getTime())) {
+        hourlyDistribution[d.getHours()]++;
+        dayOfWeekDistribution[dayNames[d.getDay()]]++;
+      }
+    }
+
+    // Track company/client ticket counts and categories
+    const companyName = t.companyName || null;
+    if (companyName) {
+      companyTicketCount[companyName] = (companyTicketCount[companyName] || 0) + 1;
+      if (!companyCategoryMap[companyName]) companyCategoryMap[companyName] = {};
+      companyCategoryMap[companyName][cat] = (companyCategoryMap[companyName][cat] || 0) + 1;
+    }
+
     descriptions.push({
       id: t.ticketNumber || t.ticketId,
       title: t.title || '',
@@ -300,6 +326,7 @@ function buildInsightsSummary(analyzedTickets) {
       rootCause: t.aiInsights?.rootCause || '',
       escalation: t.aiInsights?.escalation || false,
       createDate: t.createDate || null,
+      companyName: companyName,
     });
   }
 
@@ -307,7 +334,34 @@ function buildInsightsSummary(analyzedTickets) {
     ? Math.round(totalAutoScore / analyzedTickets.length)
     : 0;
 
-  return { categoryCount, priorityCount, avgAutoScore, escalationCount, descriptions };
+  // Build top clients list sorted by ticket count
+  const topClients = Object.entries(companyTicketCount)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+    .map(([name, count]) => {
+      const cats = companyCategoryMap[name] || {};
+      const topCategories = Object.entries(cats)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3)
+        .map(([cat, cnt]) => ({ category: cat, count: cnt }));
+      return { name, ticketCount: count, topCategories };
+    });
+
+  // Summarize hourly distribution into readable format (only non-zero hours)
+  const hourlyBreakdown = {};
+  for (let h = 0; h < 24; h++) {
+    if (hourlyDistribution[h] > 0) {
+      const label = h === 0 ? '12 AM' : h < 12 ? `${h} AM` : h === 12 ? '12 PM' : `${h - 12} PM`;
+      hourlyBreakdown[label] = hourlyDistribution[h];
+    }
+  }
+
+  return {
+    categoryCount, priorityCount, avgAutoScore, escalationCount, descriptions,
+    hourlyDistribution: hourlyBreakdown,
+    dayOfWeekDistribution,
+    topClients,
+  };
 }
 
 const INSIGHTS_SYSTEM_PROMPT = `You are a senior MSP operations strategist analyzing a batch of IT support tickets. Your job is to identify patterns, systemic issues, and strategic opportunities that individual ticket analysis would miss.
@@ -334,11 +388,21 @@ Respond with a JSON object (no markdown wrapping) containing:
 
 4. "workloadInsights": An object with:
    - "volumeAssessment": 1-2 sentence assessment of ticket volume and distribution
-   - "peakPatterns": Any time-based patterns noticed (day of week, time of day, etc.)
+   - "peakPatterns": A detailed analysis of time-based patterns. Reference the HOURLY DISTRIBUTION and DAY-OF-WEEK data provided. Identify the busiest hours (e.g. "9-11 AM accounts for 40% of tickets"), quiet periods, and any day-of-week trends. Be specific with numbers.
+   - "peakHours": Array of objects with { "hour": "9 AM", "count": 15, "percentage": 12 } for the top 5 busiest hours. Use the HOURLY DISTRIBUTION data.
    - "capacityRisk": "healthy" | "at_risk" | "overloaded" — assessment of team capacity
    - "capacityNote": 1 sentence explanation
 
-5. "automationOpportunities": An array of 2-4 objects, each with:
+5. "clientInsights": An object with:
+   - "topClients": Array of objects with { "name": string, "ticketCount": number, "topIssues": [string, string, string], "trend": "stable" | "increasing" | "decreasing", "note": string }. Use the TOP CLIENTS data. The "topIssues" should be their top 3 issue categories. The "note" should be a 1-sentence observation about this client (e.g. recurring pattern, high-priority ratio, potential systemic issue). Include up to 8 clients.
+   - "clientSummary": 1-2 sentence summary of client distribution (e.g. "Top 3 clients account for 60% of all tickets, suggesting concentration risk")
+
+6. "serviceDeliveryInsights": An object with:
+   - "overallAssessment": 2-3 sentence assessment of service delivery quality based on the ticket patterns, resolution times, escalation rates, and workload distribution
+   - "improvements": Array of 3-5 objects with { "area": string, "finding": string, "recommendation": string, "impact": "high" | "medium" | "low" }. Areas might include: response time, first-call resolution, staffing alignment, proactive monitoring, documentation, training gaps, SLA compliance, etc.
+   - "strengths": Array of 1-3 strings highlighting what the team is doing well based on ticket data
+
+7. "automationOpportunities": An array of 2-4 objects, each with:
    - "opportunity": Short title
    - "description": How to implement this automation
    - "estimatedTimeSaved": Estimated minutes saved per month
@@ -350,10 +414,19 @@ Be specific, data-driven, and practical. Reference actual ticket IDs and categor
  * Analyze a single chunk of tickets for batch insights.
  */
 async function analyzeInsightsChunk(anthropic, chunkTickets, totalTicketCount, chunkIndex, totalChunks) {
-  const { categoryCount, priorityCount, avgAutoScore, escalationCount, descriptions } = buildInsightsSummary(chunkTickets);
+  const {
+    categoryCount, priorityCount, avgAutoScore, escalationCount, descriptions,
+    hourlyDistribution, dayOfWeekDistribution, topClients,
+  } = buildInsightsSummary(chunkTickets);
 
   const chunkLabel = totalChunks > 1
     ? `\n\nNOTE: This is chunk ${chunkIndex + 1} of ${totalChunks} (${chunkTickets.length} of ${totalTicketCount} total tickets). Focus on patterns in THIS chunk; results will be combined.`
+    : '';
+
+  const topClientsSection = topClients.length > 0
+    ? `\nTOP CLIENTS (by ticket count):\n${topClients.map(c =>
+        `- ${c.name}: ${c.ticketCount} tickets — top issues: ${c.topCategories.map(tc => `${tc.category} (${tc.count})`).join(', ')}`
+      ).join('\n')}\n`
     : '';
 
   const userMessage = `Analyze this batch of ${chunkTickets.length} MSP tickets for cross-cutting patterns and strategic insights.
@@ -365,13 +438,19 @@ BATCH SUMMARY:
 - Average automation score: ${avgAutoScore}%
 - Escalation flags: ${escalationCount}
 
+HOURLY DISTRIBUTION (tickets created by hour of day):
+${JSON.stringify(hourlyDistribution)}
+
+DAY-OF-WEEK DISTRIBUTION:
+${JSON.stringify(dayOfWeekDistribution)}
+${topClientsSection}
 INDIVIDUAL TICKETS:
 ${JSON.stringify(descriptions, null, 2)}${chunkLabel}`;
 
   const response = await withTimeout(
     anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 4096,
+      max_tokens: 6000,
       system: INSIGHTS_SYSTEM_PROMPT,
       messages: [{ role: 'user', content: userMessage }],
     }),
@@ -395,6 +474,8 @@ function mergeChunkInsights(chunkResults) {
       systemicIssues: Array.isArray(p.systemicIssues) ? p.systemicIssues : [],
       strategicRecommendations: Array.isArray(p.strategicRecommendations) ? p.strategicRecommendations : [],
       workloadInsights: p.workloadInsights || {},
+      clientInsights: p.clientInsights || {},
+      serviceDeliveryInsights: p.serviceDeliveryInsights || {},
       automationOpportunities: Array.isArray(p.automationOpportunities) ? p.automationOpportunities : [],
     };
   }
@@ -439,15 +520,19 @@ function mergeChunkInsights(chunkResults) {
     return true;
   }).slice(0, 4);
 
-  // Use the last chunk's workload insights (it has the full picture of its chunk)
-  // or pick the most detailed one
-  const workloadInsights = chunkResults[chunkResults.length - 1]?.workloadInsights || {};
+  // Use the last chunk's workload/client/service insights (it has the full picture of its chunk)
+  const lastChunk = chunkResults[chunkResults.length - 1] || {};
+  const workloadInsights = lastChunk.workloadInsights || {};
+  const clientInsights = lastChunk.clientInsights || {};
+  const serviceDeliveryInsights = lastChunk.serviceDeliveryInsights || {};
 
   return {
     executiveSummary: summaries.join(' '),
     systemicIssues: dedupedIssues,
     strategicRecommendations: dedupedRecs,
     workloadInsights,
+    clientInsights,
+    serviceDeliveryInsights,
     automationOpportunities: dedupedOps,
   };
 }

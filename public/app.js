@@ -330,6 +330,7 @@ async function fetchTickets() {
       description: t.description, resolution: t.resolution, status: t.status,
       priority: t.priority, queueID: t.queueID, createDate: t.createDate,
       assignedResourceID: t.assignedResourceID, workedHours: t.workedHours,
+      companyID: t.companyID, companyName: t.companyName,
       firstResponseDateTime: t.firstResponseDateTime,
       resolutionPlanDateTime: t.resolutionPlanDateTime,
       resolvedDateTime: t.resolvedDateTime,
@@ -553,9 +554,6 @@ function renderAnalytics(analytics, summary) {
 
   // ROI projection
   renderROI(analytics.roiProjection);
-
-  // Quick Wins tab
-  renderQuickWins();
 
   // SDE Metrics tab
   renderSDEMetrics();
@@ -877,12 +875,35 @@ function renderAIInsights(insights) {
     recsContainer.innerHTML = '';
   }
 
-  // Workload Insights
+  // Workload Insights with Peak Hours chart
   const workloadContainer = $('#ai-workload-insights');
   const wl = insights.workloadInsights;
   if (wl && (wl.volumeAssessment || wl.capacityRisk)) {
     const capacityColorMap = { healthy: 'green', at_risk: 'yellow', overloaded: 'red' };
     const capacityColor = capacityColorMap[wl.capacityRisk] || 'text-dim';
+
+    // Build peak hours bar chart from AI data
+    let peakHoursHtml = '';
+    if (wl.peakHours && wl.peakHours.length > 0) {
+      const maxCount = Math.max(...wl.peakHours.map(h => h.count));
+      const topThreshold = maxCount * 0.8;
+      const highThreshold = maxCount * 0.5;
+      peakHoursHtml = `
+        <div class="ai-workload-card" style="grid-column: 1 / -1;">
+          <div class="ai-workload-label">Peak Hours</div>
+          <div class="peak-hours-chart">
+            ${wl.peakHours.map(h => {
+              const pct = maxCount > 0 ? (h.count / maxCount * 100) : 0;
+              const cls = h.count >= topThreshold ? 'peak-top' : h.count >= highThreshold ? 'peak-high' : '';
+              return `<div class="peak-hour-bar ${cls}" style="height: ${Math.max(pct, 4)}%;" title="${h.hour}: ${h.count} tickets (${h.percentage}%)"></div>`;
+            }).join('')}
+          </div>
+          <div class="peak-hours-labels">
+            ${wl.peakHours.map(h => `<span>${h.hour.replace(' AM','a').replace(' PM','p')}</span>`).join('')}
+          </div>
+        </div>`;
+    }
+
     workloadContainer.innerHTML = `
       <h3>Workload Analysis</h3>
       <div class="ai-workload-grid">
@@ -905,9 +926,67 @@ function renderAIInsights(insights) {
             <div class="ai-workload-note">${escHtml(wl.peakPatterns)}</div>
           </div>
         ` : ''}
+        ${peakHoursHtml}
       </div>`;
   } else {
     workloadContainer.innerHTML = '';
+  }
+
+  // Client Insights
+  const clientContainer = $('#ai-client-insights');
+  const ci = insights.clientInsights;
+  if (ci && (ci.topClients?.length > 0 || ci.clientSummary)) {
+    clientContainer.innerHTML = `
+      <h3>Top Clients</h3>
+      ${ci.clientSummary ? `<div class="client-summary">${escHtml(ci.clientSummary)}</div>` : ''}
+      <div class="client-insights-grid">
+        ${(ci.topClients || []).map(c => `
+          <div class="client-row">
+            <span class="client-name" title="${escHtml(c.name)}">${escHtml(c.name)}</span>
+            <span class="client-count">${c.ticketCount}</span>
+            <div class="client-issues">
+              ${(c.topIssues || []).map(issue => `<span class="client-issue-badge">${escHtml(issue)}</span>`).join('')}
+            </div>
+            ${c.note ? `<div class="client-note">${escHtml(c.note)}</div>` : ''}
+          </div>
+        `).join('')}
+      </div>`;
+  } else {
+    clientContainer.innerHTML = '';
+  }
+
+  // Service Delivery Insights
+  const sdContainer = $('#ai-service-delivery');
+  const sd = insights.serviceDeliveryInsights;
+  if (sd && (sd.overallAssessment || sd.improvements?.length > 0)) {
+    const impactColors = { high: 'var(--red)', medium: 'var(--yellow)', low: 'var(--green)' };
+    sdContainer.innerHTML = `
+      <h3>Service Delivery Insights</h3>
+      ${sd.overallAssessment ? `<div class="service-delivery-assessment">${escHtml(sd.overallAssessment)}</div>` : ''}
+      ${sd.improvements?.length > 0 ? `
+        <h4 style="font-size: 0.85rem; margin-bottom: 0.5rem; color: var(--text-dim);">Improvement Areas</h4>
+        <div class="service-delivery-grid">
+          ${sd.improvements.map(imp => `
+            <div class="service-improvement-card">
+              <div class="service-improvement-header">
+                <span class="service-improvement-area">${escHtml(imp.area)}</span>
+                <span class="badge badge-severity-${imp.impact}" style="color: ${impactColors[imp.impact] || 'var(--text-dim)'}; font-size: 0.7rem;">${(imp.impact || '').toUpperCase()}</span>
+              </div>
+              <div class="service-improvement-finding">${escHtml(imp.finding)}</div>
+              <div class="service-improvement-rec">${escHtml(imp.recommendation)}</div>
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
+      ${sd.strengths?.length > 0 ? `
+        <h4 style="font-size: 0.85rem; margin: 0.75rem 0 0.5rem; color: var(--text-dim);">Strengths</h4>
+        <div class="service-strengths">
+          ${sd.strengths.map(s => `<span class="service-strength">${escHtml(s)}</span>`).join('')}
+        </div>
+      ` : ''}
+    `;
+  } else {
+    sdContainer.innerHTML = '';
   }
 
   // Automation Opportunities
@@ -1589,86 +1668,7 @@ function closeDetailModal() {
   $('#detail-modal').classList.add('hidden');
 }
 
-// ── Quick Wins Tab ──
-function renderQuickWins() {
-  const quickWins = allTickets.filter(t => t.isQuickHitter && t.automationReadiness === 'auto_ready');
-  const semiAuto = allTickets.filter(t => t.isQuickHitter && t.automationReadiness === 'semi_auto');
-  const manualQuick = allTickets.filter(t => t.isQuickHitter && (t.automationReadiness === 'manual' || t.automationReadiness === 'script_assist'));
-
-  const totalMinSaved = quickWins.reduce((s, t) => s + (t.estimatedMinutes || 0), 0);
-
-  const summaryContainer = $('#quickwins-summary');
-  summaryContainer.innerHTML = `
-    <div class="qw-stat-row">
-      <div class="qw-stat">
-        <div class="qw-stat-number qw-green">${quickWins.length}</div>
-        <div class="qw-stat-label">Auto-Ready Quick Wins</div>
-      </div>
-      <div class="qw-stat">
-        <div class="qw-stat-number qw-yellow">${semiAuto.length}</div>
-        <div class="qw-stat-label">Semi-Auto Quick Hits</div>
-      </div>
-      <div class="qw-stat">
-        <div class="qw-stat-number qw-dim">${manualQuick.length}</div>
-        <div class="qw-stat-label">Manual Quick Hits</div>
-      </div>
-      <div class="qw-stat">
-        <div class="qw-stat-number qw-green">${totalMinSaved} min</div>
-        <div class="qw-stat-label">Automatable Right Now</div>
-      </div>
-    </div>
-  `;
-
-  // Group quick wins by category
-  const listContainer = $('#quickwins-list');
-  if (quickWins.length === 0) {
-    listContainer.innerHTML = '<div class="empty-state"><p>No auto-ready quick wins found in this batch. Try loading more tickets.</p></div>';
-    return;
-  }
-
-  const byCategory = {};
-  for (const t of quickWins) {
-    if (!byCategory[t.categoryLabel]) {
-      byCategory[t.categoryLabel] = { tickets: [], scripts: t.suggestedScripts, avgMinutes: t.estimatedMinutes, automationScore: t.automationScore };
-    }
-    byCategory[t.categoryLabel].tickets.push(t);
-  }
-
-  const sorted = Object.entries(byCategory).sort((a, b) => b[1].tickets.length - a[1].tickets.length);
-
-  listContainer.innerHTML = sorted.map(([category, data]) => {
-    const totalMin = data.tickets.length * data.avgMinutes;
-    const scriptBtns = (data.scripts || []).map(s =>
-      `<button class="script-btn" onclick="event.stopPropagation(); viewScript('${s.type}', '${s.name}')">${s.label}</button>`
-    ).join('');
-
-    const ticketRows = data.tickets.map(t => `
-      <div class="qw-ticket-row" onclick="openTicketDetail('${t.ticketId}')">
-        <span class="qw-ticket-title">${escHtml(t.title)}</span>
-        <span class="qw-ticket-id">#${t.ticketNumber || t.ticketId}</span>
-        <span class="badge badge-time">~${t.estimatedMinutes} min</span>
-      </div>
-    `).join('');
-
-    return `
-      <div class="qw-category-group">
-        <div class="qw-category-header">
-          <div class="qw-category-info">
-            <span class="qw-category-name">${category}</span>
-            <span class="qw-category-count">${data.tickets.length} ticket${data.tickets.length > 1 ? 's' : ''}</span>
-            <span class="badge badge-readiness badge-readiness-auto_ready">Auto-Ready</span>
-          </div>
-          <div class="qw-category-stats">
-            <span class="qw-save-total">${totalMin} min saveable</span>
-            <span class="qw-auto-score">Auto: ${data.automationScore}%</span>
-          </div>
-        </div>
-        <div class="qw-category-scripts">${scriptBtns}</div>
-        <div class="qw-tickets">${ticketRows}</div>
-      </div>
-    `;
-  }).join('');
-}
+// (Quick Wins tab removed)
 
 // ── SDE Metrics ──
 

@@ -274,6 +274,39 @@ class AutotaskClient {
 
     return hoursMap;
   }
+
+  /**
+   * Fetch company names for a set of company IDs.
+   * Returns a map of companyID -> companyName.
+   */
+  async getCompanyNames(companyIds) {
+    if (!companyIds || companyIds.length === 0) return {};
+
+    const nameMap = {};
+    const batchSize = 50;
+
+    for (let i = 0; i < companyIds.length; i += batchSize) {
+      const batch = companyIds.slice(i, i + batchSize);
+
+      const filter = {
+        filter: batch.length > 1
+          ? [{ op: 'or', items: batch.map(id => ({ op: 'eq', field: 'id', value: id })) }]
+          : [{ op: 'eq', field: 'id', value: batch[0] }],
+        MaxRecords: 500,
+      };
+
+      try {
+        const data = await this.request('/Companies/query', 'POST', filter);
+        for (const c of (data.items || [])) {
+          nameMap[c.id] = c.companyName || `Company ${c.id}`;
+        }
+      } catch (err) {
+        console.warn(`[Autotask] Company name batch failed: ${err.message}`);
+      }
+    }
+
+    return nameMap;
+  }
 }
 
 module.exports = AutotaskClient;
