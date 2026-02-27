@@ -331,6 +331,8 @@ async function fetchTickets() {
       priority: t.priority, queueID: t.queueID, createDate: t.createDate,
       assignedResourceID: t.assignedResourceID, workedHours: t.workedHours,
       companyID: t.companyID, companyName: t.companyName,
+      issueType: t.issueType, subIssueType: t.subIssueType,
+      issueTypeName: t.issueTypeName, subIssueTypeName: t.subIssueTypeName,
       firstResponseDateTime: t.firstResponseDateTime,
       resolutionPlanDateTime: t.resolutionPlanDateTime,
       resolvedDateTime: t.resolvedDateTime,
@@ -537,11 +539,17 @@ function renderAnalytics(analytics, summary) {
 
   $('#analytics-section').classList.remove('hidden');
 
-  // Category bars
-  renderCategoryBars(summary.categoryBreakdown);
+  // Issue Type bars (fall back to category if no issue types)
+  const hasIssueTypes = summary.issueTypeBreakdown && Object.keys(summary.issueTypeBreakdown).length > 0;
+  renderCategoryBars(hasIssueTypes ? summary.issueTypeBreakdown : summary.categoryBreakdown, hasIssueTypes);
 
-  // Category detail table
-  renderCategoryTable(analytics.categoryDeepBreakdown);
+  // Issue Type / Category detail table
+  renderCategoryTable(
+    hasIssueTypes && analytics.issueTypeDeepBreakdown?.length > 0
+      ? analytics.issueTypeDeepBreakdown
+      : analytics.categoryDeepBreakdown,
+    hasIssueTypes
+  );
 
   // Priority bars
   renderPriorityBars(analytics.priorityBreakdown);
@@ -566,12 +574,16 @@ function renderAnalytics(analytics, summary) {
   if (!aiAnalyzed) renderAIInsights(null);
 }
 
-function renderCategoryBars(categoryBreakdown) {
+function renderCategoryBars(breakdown, isIssueType) {
   const barsContainer = $('#category-bars');
   barsContainer.innerHTML = '';
 
-  const maxCount = Math.max(...Object.values(categoryBreakdown));
-  const sorted = Object.entries(categoryBreakdown).sort((a, b) => b[1] - a[1]);
+  // Update the heading based on data type
+  const heading = barsContainer.closest('.panel-card')?.querySelector('h3');
+  if (heading) heading.textContent = isIssueType ? 'Issue Type Breakdown' : 'Category Breakdown';
+
+  const maxCount = Math.max(...Object.values(breakdown));
+  const sorted = Object.entries(breakdown).sort((a, b) => b[1] - a[1]);
   const colors = ['fill-primary', 'fill-green', 'fill-yellow', 'fill-orange', 'fill-purple', 'fill-cyan', 'fill-red'];
 
   sorted.forEach(([label, count], i) => {
@@ -579,7 +591,7 @@ function renderCategoryBars(categoryBreakdown) {
     const color = colors[i % colors.length];
     barsContainer.innerHTML += `
       <div class="cat-bar-row">
-        <span class="cat-bar-label">${label}</span>
+        <span class="cat-bar-label">${escHtml(label)}</span>
         <div class="cat-bar-track">
           <div class="cat-bar-fill ${color}" style="width: ${pct}%"></div>
         </div>
@@ -588,19 +600,28 @@ function renderCategoryBars(categoryBreakdown) {
   });
 }
 
-function renderCategoryTable(categoryDeepBreakdown) {
+function renderCategoryTable(deepBreakdown, isIssueType) {
   const tbody = $('#category-detail-table tbody');
   tbody.innerHTML = '';
 
-  for (const cat of categoryDeepBreakdown) {
+  // Update header label
+  const th = $('#category-detail-table thead th:first-child');
+  if (th) th.textContent = isIssueType ? 'Issue Type / Sub-Issue' : 'Category';
+
+  // Also update the card heading
+  const heading = $('#category-detail-table').closest('.panel-card')?.querySelector('h3');
+  if (heading) heading.textContent = isIssueType ? 'Issue Type Details' : 'Category Details';
+
+  for (const row of deepBreakdown) {
+    const label = row.issueType || row.category;
     tbody.innerHTML += `
       <tr>
-        <td>${cat.category}</td>
-        <td>${cat.count}</td>
-        <td>${cat.pctOfTotal}%</td>
-        <td>${cat.avgAutomationScore}%</td>
-        <td>${cat.totalMinutesSaveable}</td>
-        <td>${cat.quickHitters}</td>
+        <td>${escHtml(label)}</td>
+        <td>${row.count}</td>
+        <td>${row.pctOfTotal}%</td>
+        <td>${row.avgAutomationScore}%</td>
+        <td>${row.totalMinutesSaveable}</td>
+        <td>${row.quickHitters}</td>
       </tr>`;
   }
 }

@@ -663,10 +663,14 @@ main {
 }
 
 .cat-bar-label {
-  width: 160px;
+  width: 200px;
   text-align: right;
   color: var(--text-dim);
   flex-shrink: 0;
+  font-size: 0.82rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .cat-bar-track {

@@ -43,6 +43,31 @@ async function getPriorityMap() {
   }
 }
 
+// Cached issue type maps (fetched from Autotask on first use)
+let cachedIssueTypeMap = null;
+let cachedSubIssueTypeMap = null;
+
+async function getIssueTypeMaps() {
+  if (cachedIssueTypeMap) return { issueTypeMap: cachedIssueTypeMap, subIssueTypeMap: cachedSubIssueTypeMap };
+  if (!autotaskClient) return { issueTypeMap: null, subIssueTypeMap: null };
+  try {
+    const { issueTypes, subIssueTypes } = await autotaskClient.getIssueAndSubIssueTypes();
+    cachedIssueTypeMap = {};
+    for (const it of issueTypes) {
+      cachedIssueTypeMap[it.value] = it.label;
+    }
+    cachedSubIssueTypeMap = {};
+    for (const sit of subIssueTypes) {
+      cachedSubIssueTypeMap[sit.value] = sit.label;
+    }
+    console.log(`[Autotask] Issue type map loaded: ${Object.keys(cachedIssueTypeMap).length} types, ${Object.keys(cachedSubIssueTypeMap).length} sub-types`);
+    return { issueTypeMap: cachedIssueTypeMap, subIssueTypeMap: cachedSubIssueTypeMap };
+  } catch (err) {
+    console.warn(`[Autotask] Failed to fetch issue type picklists: ${err.message}`);
+    return { issueTypeMap: null, subIssueTypeMap: null };
+  }
+}
+
 // ── API Routes ──
 
 /**
@@ -137,12 +162,17 @@ app.get('/api/tickets', async (req, res) => {
       }
     }
 
-    // Attach workedHours, assignedResourceID, and companyName to each ticket before analysis
+    // Resolve issue type and sub-issue type labels
+    const { issueTypeMap, subIssueTypeMap } = await getIssueTypeMaps();
+
+    // Attach workedHours, assignedResourceID, companyName, and issue type labels to each ticket
     const enrichedTickets = tickets.map(t => ({
       ...t,
       workedHours: hoursMap[t.id] || 0,
       assignedResourceID: t.assignedResourceID || null,
       companyName: companyNameMap[t.companyID] || null,
+      issueTypeName: (issueTypeMap && t.issueType) ? issueTypeMap[t.issueType] || null : null,
+      subIssueTypeName: (subIssueTypeMap && t.subIssueType) ? subIssueTypeMap[t.subIssueType] || null : null,
     }));
 
     // Filter out zero worked-hours tickets if requested
@@ -171,7 +201,7 @@ app.get('/api/tickets', async (req, res) => {
     const summary = getSummary(categorized);
     const analytics = getDeepAnalytics(categorized, filteredTickets, { priorityMap });
 
-    res.json({ tickets: analyzed, summary, analytics, queueDiagnostics: queueDist, priorityMap });
+    res.json({ tickets: analyzed, summary, analytics, queueDiagnostics: queueDist, priorityMap, issueTypeMap, subIssueTypeMap });
   } catch (err) {
     console.error('Failed to fetch tickets:', err.message);
     res.status(500).json({ error: err.message });

@@ -309,6 +309,10 @@ function analyzeTicket(ticket) {
       assignedResourceID: ticket.assignedResourceID || null,
       companyID: ticket.companyID || null,
       companyName: ticket.companyName || null,
+      issueType: ticket.issueType || null,
+      subIssueType: ticket.subIssueType || null,
+      issueTypeName: ticket.issueTypeName || null,
+      subIssueTypeName: ticket.subIssueTypeName || null,
       workedHours: ticket.workedHours || 0,
       firstResponseDateTime: ticket.firstResponseDateTime || null,
       resolutionPlanDateTime: ticket.resolutionPlanDateTime || null,
@@ -412,6 +416,10 @@ function analyzeTicket(ticket) {
     assignedResourceID: ticket.assignedResourceID || null,
     companyID: ticket.companyID || null,
     companyName: ticket.companyName || null,
+    issueType: ticket.issueType || null,
+    subIssueType: ticket.subIssueType || null,
+    issueTypeName: ticket.issueTypeName || null,
+    subIssueTypeName: ticket.subIssueTypeName || null,
     workedHours: ticket.workedHours || 0,
     firstResponseDateTime: ticket.firstResponseDateTime || null,
     resolutionPlanDateTime: ticket.resolutionPlanDateTime || null,
@@ -457,10 +465,19 @@ function getSummary(analyzedTickets) {
   const quickHitters = analyzedTickets.filter(t => t.isQuickHitter);
   const automatable = analyzedTickets.filter(t => t.automationScore >= 70);
   const categories = {};
+  const issueTypeBreakdown = {};
 
   for (const t of analyzedTickets) {
     if (t.categoryLabel !== 'Needs Review' && t.categoryLabel !== 'Uncategorized') {
       categories[t.categoryLabel] = (categories[t.categoryLabel] || 0) + 1;
+    }
+
+    // Build issue type / sub-issue type breakdown
+    const issueName = t.issueTypeName || null;
+    const subIssueName = t.subIssueTypeName || null;
+    if (issueName) {
+      const label = subIssueName ? `${issueName} / ${subIssueName}` : issueName;
+      issueTypeBreakdown[label] = (issueTypeBreakdown[label] || 0) + 1;
     }
   }
 
@@ -470,6 +487,7 @@ function getSummary(analyzedTickets) {
     automatableCount: automatable.length,
     estimatedTimeSaved: quickHitters.reduce((sum, t) => sum + (t.estimatedMinutes || 0), 0),
     categoryBreakdown: categories,
+    issueTypeBreakdown,
     avgAutomationScore: analyzedTickets.length
       ? Math.round(analyzedTickets.reduce((s, t) => s + t.automationScore, 0) / analyzedTickets.length)
       : 0,
@@ -710,6 +728,7 @@ function getDeepAnalytics(analyzedTickets, rawTickets = [], options = {}) {
 
   // Category deep stats (count, avg automation score, total time saveable)
   const categoryStats = {};
+  const issueTypeStats = {};
   for (const t of analyzedTickets) {
     if (!categoryStats[t.categoryLabel]) {
       categoryStats[t.categoryLabel] = {
@@ -724,12 +743,38 @@ function getDeepAnalytics(analyzedTickets, rawTickets = [], options = {}) {
     cs.totalAutomationScore += t.automationScore;
     cs.totalMinutes += t.estimatedMinutes || 0;
     if (t.isQuickHitter) cs.quickHitters++;
+
+    // Issue type / sub-issue type stats
+    const issueName = t.issueTypeName || null;
+    const subIssueName = t.subIssueTypeName || null;
+    if (issueName) {
+      const label = subIssueName ? `${issueName} / ${subIssueName}` : issueName;
+      if (!issueTypeStats[label]) {
+        issueTypeStats[label] = { count: 0, totalAutomationScore: 0, totalMinutes: 0, quickHitters: 0 };
+      }
+      const its = issueTypeStats[label];
+      its.count++;
+      its.totalAutomationScore += t.automationScore;
+      its.totalMinutes += t.estimatedMinutes || 0;
+      if (t.isQuickHitter) its.quickHitters++;
+    }
   }
 
   const categoryDeepBreakdown = Object.entries(categoryStats)
     .filter(([label]) => label !== 'Needs Review' && label !== 'Uncategorized')
     .map(([label, stats]) => ({
       category: label,
+      count: stats.count,
+      avgAutomationScore: stats.count ? Math.round(stats.totalAutomationScore / stats.count) : 0,
+      totalMinutesSaveable: stats.totalMinutes,
+      quickHitters: stats.quickHitters,
+      pctOfTotal: analyzedTickets.length ? Math.round((stats.count / analyzedTickets.length) * 100) : 0,
+    }))
+    .sort((a, b) => b.count - a.count);
+
+  const issueTypeDeepBreakdown = Object.entries(issueTypeStats)
+    .map(([label, stats]) => ({
+      issueType: label,
       count: stats.count,
       avgAutomationScore: stats.count ? Math.round(stats.totalAutomationScore / stats.count) : 0,
       totalMinutesSaveable: stats.totalMinutes,
@@ -872,6 +917,7 @@ function getDeepAnalytics(analyzedTickets, rawTickets = [], options = {}) {
   return {
     priorityBreakdown,
     categoryDeepBreakdown,
+    issueTypeDeepBreakdown,
     trendData,
     topOpportunities,
     roiProjection,

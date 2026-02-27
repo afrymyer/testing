@@ -184,14 +184,25 @@ class AutotaskClient {
   }
 
   /**
-   * Fetch issue/sub-issue types for better categorization.
+   * Fetch issue type and sub-issue type picklist values.
+   * Returns { issueTypes: [{value, label}], subIssueTypes: [{value, label, parentValue}] }
    */
-  async getIssueTypes() {
-    const data = await this.request(
-      '/Tickets/entityInformation/fields'
-    );
-    const issueField = (data.fields || []).find(f => f.name === 'issueType');
-    return issueField ? issueField.picklistValues || [] : [];
+  async getIssueAndSubIssueTypes() {
+    const data = await this.request('/Tickets/entityInformation/fields');
+    const fields = data.fields || [];
+
+    const issueField = fields.find(f => f.name === 'issueType');
+    const subIssueField = fields.find(f => f.name === 'subIssueType');
+
+    const issueTypes = (issueField?.picklistValues || [])
+      .filter(v => v.isActive)
+      .map(v => ({ value: v.value, label: v.label }));
+
+    const subIssueTypes = (subIssueField?.picklistValues || [])
+      .filter(v => v.isActive)
+      .map(v => ({ value: v.value, label: v.label, parentValue: v.parentValue || null }));
+
+    return { issueTypes, subIssueTypes };
   }
 
   /**
