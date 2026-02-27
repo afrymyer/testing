@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=14">
+  <link rel="stylesheet" href="style.css?v=16">
 </head>
 <body>
   <header>
@@ -145,6 +145,7 @@
     <section id="analytics-section" class="analytics-section hidden">
       <div class="tab-bar">
         <button class="tab-btn active" data-tab="tab-overview">Overview</button>
+        <button class="tab-btn" data-tab="tab-clients">Clients</button>
         <button class="tab-btn" data-tab="tab-sde-metrics">SDE Metrics</button>
         <button class="tab-btn" data-tab="tab-ai-insights" id="tab-btn-ai-insights">AI &amp; Tickets</button>
       </div>
@@ -192,6 +193,53 @@
                 <th>Avg Auto Score</th>
                 <th>Total Min Saveable</th>
                 <th>Quick Hitters</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Tab: Clients -->
+      <div id="tab-clients" class="tab-panel">
+        <div class="panel-card">
+          <h3>Client Overview</h3>
+          <p class="panel-desc">Ticket volume and issue breakdown per client. Click a row to expand details.</p>
+
+          <div class="client-search-bar">
+            <input type="text" id="client-search" placeholder="Search clients..." class="input-field" />
+          </div>
+
+          <table class="data-table" id="client-summary-table">
+            <thead>
+              <tr>
+                <th>Client</th>
+                <th>Tickets</th>
+                <th>Avg Auto Score</th>
+                <th>Top Issue Type</th>
+                <th>Quick Hitters</th>
+                <th>Est. Min Saveable</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <div class="panel-card" id="client-detail-panel" style="display:none;">
+          <h3 id="client-detail-name">Client Details</h3>
+          <div class="client-detail-stats" id="client-detail-stats"></div>
+          <h4>Issue Type Breakdown</h4>
+          <div id="client-detail-issues"></div>
+          <h4>Recent Tickets</h4>
+          <table class="data-table" id="client-detail-tickets">
+            <thead>
+              <tr>
+                <th>Ticket #</th>
+                <th>Title</th>
+                <th>Issue Type</th>
+                <th>Priority</th>
+                <th>Auto Score</th>
+                <th>Hours Worked</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -384,6 +432,6 @@
     <span class="footer-ai">AI-Powered</span>
   </footer>
 
-  <script src="app.js?v=15"></script>
+  <script src="app.js?v=16"></script>
 </body>
 </html>

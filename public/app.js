@@ -554,6 +554,9 @@ function renderAnalytics(analytics, summary) {
   // Priority bars
   renderPriorityBars(analytics.priorityBreakdown);
 
+  // Clients tab
+  renderClients();
+
   // Trend chart
   renderTrendChart(analytics.trendData);
 
@@ -1782,6 +1785,130 @@ function renderReconciliation(allReactiveTickets, allMACTickets, reactiveReceive
       </div>
     </details>
   `;
+}
+
+// ── Client Tab ──
+
+function renderClients() {
+  const tbody = $('#client-summary-table tbody');
+  tbody.innerHTML = '';
+
+  // Aggregate per-client stats from allTickets
+  const clientMap = {};
+  for (const t of allTickets) {
+    const name = t.companyName || 'Unknown';
+    if (!clientMap[name]) {
+      clientMap[name] = {
+        name,
+        tickets: [],
+        totalAutoScore: 0,
+        quickHitters: 0,
+        totalMinutes: 0,
+        issueTypes: {},
+      };
+    }
+    const c = clientMap[name];
+    c.tickets.push(t);
+    c.totalAutoScore += t.automationScore || 0;
+    if (t.isQuickHitter) c.quickHitters++;
+    c.totalMinutes += t.estimatedMinutes || 0;
+
+    const itLabel = t.issueTypeName
+      ? (t.subIssueTypeName ? `${t.issueTypeName} / ${t.subIssueTypeName}` : t.issueTypeName)
+      : (t.categoryLabel || 'Uncategorized');
+    c.issueTypes[itLabel] = (c.issueTypes[itLabel] || 0) + 1;
+  }
+
+  const clients = Object.values(clientMap).sort((a, b) => b.tickets.length - a.tickets.length);
+
+  // Search filter
+  const searchInput = $('#client-search');
+  searchInput.oninput = () => {
+    const q = searchInput.value.toLowerCase();
+    const rows = tbody.querySelectorAll('tr');
+    rows.forEach(row => {
+      const name = row.dataset.clientName || '';
+      row.style.display = name.toLowerCase().includes(q) ? '' : 'none';
+    });
+  };
+
+  for (const c of clients) {
+    const avgScore = c.tickets.length ? Math.round(c.totalAutoScore / c.tickets.length) : 0;
+    const topIssue = Object.entries(c.issueTypes).sort((a, b) => b[1] - a[1])[0];
+    const topIssueLabel = topIssue ? `${topIssue[0]} (${topIssue[1]})` : '—';
+
+    const tr = document.createElement('tr');
+    tr.dataset.clientName = c.name;
+    tr.style.cursor = 'pointer';
+    tr.innerHTML = `
+      <td>${escHtml(c.name)}</td>
+      <td>${c.tickets.length}</td>
+      <td>${avgScore}%</td>
+      <td>${escHtml(topIssueLabel)}</td>
+      <td>${c.quickHitters}</td>
+      <td>${c.totalMinutes}</td>`;
+    tr.addEventListener('click', () => showClientDetail(c));
+    tbody.appendChild(tr);
+  }
+}
+
+function showClientDetail(client) {
+  const panel = $('#client-detail-panel');
+  panel.style.display = 'block';
+  $('#client-detail-name').textContent = client.name;
+
+  // Stats summary
+  const avgScore = client.tickets.length ? Math.round(client.totalAutoScore / client.tickets.length) : 0;
+  const statsEl = $('#client-detail-stats');
+  statsEl.innerHTML = `
+    <div class="stat-row">
+      <span class="stat-item"><strong>${client.tickets.length}</strong> Tickets</span>
+      <span class="stat-item"><strong>${avgScore}%</strong> Avg Auto Score</span>
+      <span class="stat-item"><strong>${client.quickHitters}</strong> Quick Hitters</span>
+      <span class="stat-item"><strong>${client.totalMinutes}</strong> Min Saveable</span>
+    </div>`;
+
+  // Issue type breakdown bars
+  const issuesEl = $('#client-detail-issues');
+  issuesEl.innerHTML = '';
+  const sortedIssues = Object.entries(client.issueTypes).sort((a, b) => b[1] - a[1]);
+  const maxIssue = sortedIssues.length ? sortedIssues[0][1] : 1;
+  const colors = ['fill-primary', 'fill-green', 'fill-yellow', 'fill-orange', 'fill-purple', 'fill-cyan', 'fill-red'];
+  sortedIssues.forEach(([label, count], i) => {
+    const pct = maxIssue > 0 ? (count / maxIssue) * 100 : 0;
+    const color = colors[i % colors.length];
+    issuesEl.innerHTML += `
+      <div class="cat-bar-row">
+        <span class="cat-bar-label">${escHtml(label)}</span>
+        <div class="cat-bar-track">
+          <div class="cat-bar-fill ${color}" style="width: ${pct}%"></div>
+        </div>
+        <span class="cat-bar-count">${count}</span>
+      </div>`;
+  });
+
+  // Recent tickets table (up to 25)
+  const ticketTbody = $('#client-detail-tickets tbody');
+  ticketTbody.innerHTML = '';
+  const recent = client.tickets.slice(0, 25);
+  for (const t of recent) {
+    const itLabel = t.issueTypeName
+      ? (t.subIssueTypeName ? `${t.issueTypeName} / ${t.subIssueTypeName}` : t.issueTypeName)
+      : (t.categoryLabel || '—');
+    const pLabel = currentPriorityMap[t.priority] || `P${t.priority || '?'}`;
+    ticketTbody.innerHTML += `
+      <tr>
+        <td>${t.ticketNumber || t.ticketId || '—'}</td>
+        <td title="${escHtml(t.title || '')}">${escHtml((t.title || '').slice(0, 60))}${(t.title || '').length > 60 ? '…' : ''}</td>
+        <td>${escHtml(itLabel)}</td>
+        <td>${escHtml(pLabel)}</td>
+        <td>${t.automationScore || 0}%</td>
+        <td>${t.workedHours || 0}</td>
+      </tr>`;
+  }
+
+  // Scroll to detail
+  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function renderSDEMetrics() {

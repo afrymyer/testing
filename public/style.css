@@ -3302,3 +3302,49 @@ tr.time-leak-moderate td:first-child { border-left: 3px solid rgba(122, 193, 67,
   .client-row { grid-template-columns: 1fr auto; }
   .client-issues { grid-column: 1 / -1; }
 }
+
+/* ── Client Tab ── */
+.client-search-bar {
+  margin-bottom: 1rem;
+}
+.client-search-bar .input-field {
+  width: 100%;
+  max-width: 360px;
+  padding: 0.5rem 0.75rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 0.85rem;
+}
+.client-search-bar .input-field:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(122, 193, 67, 0.15);
+}
+
+#client-summary-table tbody tr:hover {
+  background: rgba(122, 193, 67, 0.06);
+}
+
+.client-detail-stats .stat-row {
+  display: flex;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+.client-detail-stats .stat-item {
+  font-size: 0.88rem;
+  color: var(--text-dim);
+}
+.client-detail-stats .stat-item strong {
+  color: var(--accent);
+  font-size: 1.05rem;
+  margin-right: 0.25rem;
+}
+
+#client-detail-panel h4 {
+  margin: 1.25rem 0 0.5rem;
+  font-size: 0.92rem;
+  color: var(--text);
+}
