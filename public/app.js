@@ -580,10 +580,10 @@ function renderCategoryBars(breakdown, isIssueType) {
 
   // Update the heading based on data type
   const heading = barsContainer.closest('.panel-card')?.querySelector('h3');
-  if (heading) heading.textContent = isIssueType ? 'Issue Type Breakdown' : 'Category Breakdown';
+  if (heading) heading.textContent = isIssueType ? 'Top 15 Issue Types' : 'Category Breakdown';
 
   const maxCount = Math.max(...Object.values(breakdown));
-  const sorted = Object.entries(breakdown).sort((a, b) => b[1] - a[1]);
+  const sorted = Object.entries(breakdown).sort((a, b) => b[1] - a[1]).slice(0, 15);
   const colors = ['fill-primary', 'fill-green', 'fill-yellow', 'fill-orange', 'fill-purple', 'fill-cyan', 'fill-red'];
 
   sorted.forEach(([label, count], i) => {
@@ -610,9 +610,9 @@ function renderCategoryTable(deepBreakdown, isIssueType) {
 
   // Also update the card heading
   const heading = $('#category-detail-table').closest('.panel-card')?.querySelector('h3');
-  if (heading) heading.textContent = isIssueType ? 'Issue Type Details' : 'Category Details';
+  if (heading) heading.textContent = isIssueType ? 'Top 15 Issue Type Details' : 'Category Details';
 
-  for (const row of deepBreakdown) {
+  for (const row of deepBreakdown.slice(0, 15)) {
     const label = row.issueType || row.category;
     tbody.innerHTML += `
       <tr>
