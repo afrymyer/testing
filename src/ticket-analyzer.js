@@ -825,6 +825,8 @@ function getDeepAnalytics(analyzedTickets, rawTickets = [], options = {}) {
           overageMinutes: Math.round(overageMin),
           overagePct,
           assignedResourceID: t.assignedResourceID,
+          resolution: t.resolution || '',
+          resolutionAnalysis: t.resolutionAnalysis || [],
         });
       }
     }

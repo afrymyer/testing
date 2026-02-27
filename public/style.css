@@ -2943,6 +2943,42 @@ tr.time-leak-moderate td:first-child { border-left: 3px solid rgba(122, 193, 67,
 .badge.time-leak-high { background: rgba(250, 204, 21, 0.15); color: #facc15; }
 .badge.time-leak-moderate { background: rgba(122, 193, 67, 0.15); color: var(--green); }
 
+/* Time Leak Completion Notes Row */
+.time-leak-notes-row td {
+  padding-top: 0 !important;
+  padding-bottom: 0.6rem !important;
+  border-top: none !important;
+}
+
+.time-leak-notes {
+  padding: 0.4rem 0.6rem;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 4px;
+  border-left: 2px solid var(--text-dim);
+  margin-top: -0.25rem;
+}
+
+.time-leak-notes-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-right: 0.4rem;
+}
+
+.time-leak-notes-text {
+  font-size: 0.78rem;
+  color: var(--text);
+  line-height: 1.4;
+}
+
+.time-leak-notes-empty {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
 /* === ROI Cards (updated) === */
 .roi-card {
   background: linear-gradient(135deg, var(--surface-2) 0%, var(--surface) 100%);

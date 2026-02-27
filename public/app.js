@@ -1153,6 +1153,9 @@ function renderTimeLeaks(timeAnalysis) {
         ${leaks.map(l => {
           const overClass = l.overagePct >= 200 ? 'time-leak-critical' : l.overagePct >= 100 ? 'time-leak-high' : 'time-leak-moderate';
           const techName = getResourceName(l.assignedResourceID) || '—';
+          // Extract completion notes snippet for "why it took longer"
+          const resText = (l.resolution || '').trim();
+          const resSnippet = resText.length > 200 ? resText.substring(0, 200) + '...' : resText;
           return `
             <tr class="${overClass}" onclick="openTicketDetail('${l.ticketId}')" style="cursor:pointer">
               <td><strong>#${l.ticketNumber || l.ticketId}</strong><br><span class="time-leak-title">${escHtml(l.title)}</span></td>
@@ -1162,6 +1165,14 @@ function renderTimeLeaks(timeAnalysis) {
               <td class="time-leak-overage">+${l.overageMinutes}m</td>
               <td><span class="badge ${overClass}">+${l.overagePct}%</span></td>
               <td>${escHtml(techName)}</td>
+            </tr>
+            <tr class="time-leak-notes-row ${overClass}" onclick="openTicketDetail('${l.ticketId}')" style="cursor:pointer">
+              <td colspan="7">
+                <div class="time-leak-notes">
+                  <span class="time-leak-notes-label">Completion Notes:</span>
+                  ${resSnippet ? `<span class="time-leak-notes-text">${escHtml(resSnippet)}</span>` : '<span class="time-leak-notes-empty">No completion notes recorded</span>'}
+                </div>
+              </td>
             </tr>`;
         }).join('')}
       </tbody>
