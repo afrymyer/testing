@@ -231,6 +231,34 @@ function scoreResolution(resolutionText) {
 }
 
 /**
+ * Detect whether PIA (Process Intelligent Automation) or Datto RMM
+ * automation was used to resolve a ticket by scanning resolution and
+ * description text for automation platform indicators.
+ */
+const PIA_INDICATORS = [
+  'pia', 'process intelligent automation', 'automated via',
+  'ran script', 'executed script', 'automation script', 'auto-remediated',
+  'auto remediated', 'script ran', 'script executed', 'powershell script',
+  'datto rmm', 'rmm script', 'rmm job', 'component ran', 'datto job',
+  'automated fix', 'automated resolution', 'self-heal', 'auto-resolved',
+  'bulk action', 'm365 admin', 'pia portal',
+];
+
+function detectPIA(ticket) {
+  const text = [
+    ticket.resolution || '',
+    ticket.description || '',
+  ].join(' ').toLowerCase();
+
+  for (const kw of PIA_INDICATORS) {
+    if (text.includes(kw)) {
+      return { usedPIA: true, piaIndicator: kw };
+    }
+  }
+  return { usedPIA: false, piaIndicator: null };
+}
+
+/**
  * Score the client description for specificity — more detail about a
  * known problem pattern means higher confidence the category is right.
  * Returns a confidence bonus (0-20).
@@ -288,6 +316,9 @@ function analyzeTicket(ticket) {
 
   // Score the resolution text for automation indicators
   const resolutionScore = scoreResolution(ticket.resolution);
+
+  // Detect PIA / automation platform usage
+  const piaResult = detectPIA(ticket);
 
   // No category match at all
   if (!bestMatch || bestScore === 0) {
@@ -379,6 +410,8 @@ function analyzeTicket(ticket) {
         : `Weak match to "${bestMatch.label}" (${confidence}% confidence). Not enough signal to recommend automation. Manual review needed.`,
       resolutionAnalysis: resolutionScore.reasons,
       quickWinValue: 0,
+      usedPIA: piaResult.usedPIA,
+      piaIndicator: piaResult.piaIndicator,
     };
   }
 
@@ -439,6 +472,8 @@ function analyzeTicket(ticket) {
     automationPath: readiness.path,
     resolutionAnalysis: resolutionScore.reasons,
     quickWinValue: isQuickHitter ? Math.round((adjustedAutoScore * (20 - bestMatch.avgMinutes + 1) * adjustedConfidence) / 100) : 0,
+    usedPIA: piaResult.usedPIA,
+    piaIndicator: piaResult.piaIndicator,
   };
 }
 
@@ -914,6 +949,70 @@ function getDeepAnalytics(analyzedTickets, rawTickets = [], options = {}) {
     totalTimeLostMinutes: timeLeaks.reduce((s, t) => s + t.overageMinutes, 0),
   };
 
+  // ── Quick Hitter Validation ──
+  // Compare predicted 5-20 min tickets against actual worked time.
+  const quickHitterTickets = analyzedTickets.filter(t => t.isQuickHitter);
+  const qhWithTime = quickHitterTickets.filter(t => (t.workedHours || 0) > 0);
+
+  const qhValidation = {
+    totalPredicted: quickHitterTickets.length,
+    withActualTime: qhWithTime.length,
+    withoutTime: quickHitterTickets.length - qhWithTime.length,
+    // A prediction is "accurate" if actual time is <= 25 min (allowing 5 min buffer over 20)
+    accurateCount: 0,
+    underestimatedCount: 0,
+    // PIA usage among quick hitters
+    usedPIACount: quickHitterTickets.filter(t => t.usedPIA).length,
+    // Detail rows for the UI table
+    tickets: [],
+    // Issue type breakdown of quick hitters
+    byIssueType: {},
+  };
+
+  for (const t of quickHitterTickets) {
+    const actualMin = (t.workedHours || 0) * 60;
+    const estimatedMin = t.estimatedMinutes || 0;
+    const hasTime = actualMin > 0;
+    const isAccurate = hasTime && actualMin <= 25;
+    const isUnderestimated = hasTime && actualMin > 25;
+
+    if (isAccurate) qhValidation.accurateCount++;
+    if (isUnderestimated) qhValidation.underestimatedCount++;
+
+    // Issue type grouping
+    const itLabel = t.issueTypeName
+      ? (t.subIssueTypeName ? `${t.issueTypeName} / ${t.subIssueTypeName}` : t.issueTypeName)
+      : (t.categoryLabel || 'Uncategorized');
+    if (!qhValidation.byIssueType[itLabel]) {
+      qhValidation.byIssueType[itLabel] = { count: 0, accurate: 0, underestimated: 0, noTime: 0, usedPIA: 0 };
+    }
+    const ig = qhValidation.byIssueType[itLabel];
+    ig.count++;
+    if (isAccurate) ig.accurate++;
+    if (isUnderestimated) ig.underestimated++;
+    if (!hasTime) ig.noTime++;
+    if (t.usedPIA) ig.usedPIA++;
+
+    qhValidation.tickets.push({
+      ticketId: t.ticketId,
+      ticketNumber: t.ticketNumber,
+      title: t.title,
+      companyName: t.companyName || 'Unknown',
+      issueType: itLabel,
+      estimatedMinutes: estimatedMin,
+      actualMinutes: hasTime ? Math.round(actualMin) : null,
+      variance: hasTime ? Math.round(actualMin - estimatedMin) : null,
+      status: !hasTime ? 'no_data' : (isAccurate ? 'accurate' : 'underestimated'),
+      usedPIA: t.usedPIA,
+      piaIndicator: t.piaIndicator,
+      automationScore: t.automationScore,
+    });
+  }
+
+  qhValidation.accuracyRate = qhWithTime.length > 0
+    ? Math.round((qhValidation.accurateCount / qhWithTime.length) * 100)
+    : null;
+
   return {
     priorityBreakdown,
     categoryDeepBreakdown,
@@ -922,6 +1021,7 @@ function getDeepAnalytics(analyzedTickets, rawTickets = [], options = {}) {
     topOpportunities,
     roiProjection,
     timeAnalysis,
+    quickHitterValidation: qhValidation,
   };
 }
 

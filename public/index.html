@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=16">
+  <link rel="stylesheet" href="style.css?v=17">
 </head>
 <body>
   <header>
@@ -327,6 +327,7 @@
           <button class="sub-tab-btn active" data-subtab="subtab-ai-insights">AI Insights</button>
           <button class="sub-tab-btn" data-subtab="subtab-time-analysis">Time Analysis</button>
           <button class="sub-tab-btn" data-subtab="subtab-time-leaks">Time Leaks</button>
+          <button class="sub-tab-btn" data-subtab="subtab-qh-validation">Quick Hitter Validation</button>
           <button class="sub-tab-btn" data-subtab="subtab-tickets">Tickets</button>
         </div>
 
@@ -351,6 +352,61 @@
         <div id="subtab-time-leaks" class="sub-tab-panel">
           <div class="panel-card" id="time-leaks-summary"></div>
           <div class="panel-card" id="time-leaks-list"></div>
+        </div>
+
+        <!-- Sub-tab: Quick Hitter Validation -->
+        <div id="subtab-qh-validation" class="sub-tab-panel">
+          <!-- Summary cards -->
+          <div class="panel-card" id="qh-validation-summary"></div>
+
+          <!-- Issue type accuracy breakdown -->
+          <div class="panel-card" id="qh-issue-type-breakdown">
+            <h3>Accuracy by Issue Type / Sub-Issue</h3>
+            <table class="data-table" id="qh-issue-type-table">
+              <thead>
+                <tr>
+                  <th>Issue Type</th>
+                  <th>Predicted</th>
+                  <th>Accurate</th>
+                  <th>Underestimated</th>
+                  <th>No Time Data</th>
+                  <th>Used PIA</th>
+                  <th>Accuracy %</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+
+          <!-- Ticket-level detail -->
+          <div class="panel-card" id="qh-ticket-detail">
+            <h3>Ticket-Level Validation</h3>
+            <div class="qh-filter-bar">
+              <select id="qh-status-filter" class="input-field">
+                <option value="all">All Statuses</option>
+                <option value="accurate">Accurate Only</option>
+                <option value="underestimated">Underestimated Only</option>
+                <option value="no_data">No Time Data</option>
+                <option value="pia">Used PIA</option>
+              </select>
+            </div>
+            <table class="data-table" id="qh-ticket-table">
+              <thead>
+                <tr>
+                  <th>Ticket #</th>
+                  <th>Title</th>
+                  <th>Client</th>
+                  <th>Issue Type</th>
+                  <th>Est. Min</th>
+                  <th>Actual Min</th>
+                  <th>Variance</th>
+                  <th>PIA?</th>
+                  <th>Verdict</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
         </div>
 
         <!-- Sub-tab: Tickets -->
@@ -432,6 +488,6 @@
     <span class="footer-ai">AI-Powered</span>
   </footer>
 
-  <script src="app.js?v=16"></script>
+  <script src="app.js?v=17"></script>
 </body>
 </html>

@@ -333,6 +333,7 @@ async function fetchTickets() {
       companyID: t.companyID, companyName: t.companyName,
       issueType: t.issueType, subIssueType: t.subIssueType,
       issueTypeName: t.issueTypeName, subIssueTypeName: t.subIssueTypeName,
+      usedPIA: t.usedPIA, piaIndicator: t.piaIndicator,
       firstResponseDateTime: t.firstResponseDateTime,
       resolutionPlanDateTime: t.resolutionPlanDateTime,
       resolvedDateTime: t.resolvedDateTime,
@@ -572,6 +573,9 @@ function renderAnalytics(analytics, summary) {
   // Time Analysis (always render when data available)
   renderTimeAnalysis(analytics.timeAnalysis);
   renderTimeLeaks(analytics.timeAnalysis);
+
+  // Quick Hitter Validation
+  renderQHValidation(analytics.quickHitterValidation);
 
   // AI Insights tab (show placeholder if not yet analyzed)
   if (!aiAnalyzed) renderAIInsights(null);
@@ -1201,6 +1205,118 @@ function renderTimeLeaks(timeAnalysis) {
         }).join('')}
       </tbody>
     </table>`;
+}
+
+// ── Quick Hitter Validation ──
+
+function renderQHValidation(qhValidation) {
+  const summaryEl = $('#qh-validation-summary');
+
+  if (!qhValidation || qhValidation.totalPredicted === 0) {
+    summaryEl.innerHTML = `
+      <div class="empty-state">
+        <h3>No Quick Hitters Detected</h3>
+        <p>No tickets were predicted as 5-20 minute fixes in this dataset.</p>
+      </div>`;
+    return;
+  }
+
+  const v = qhValidation;
+  const accuracyColor = v.accuracyRate >= 75 ? 'qh-stat-good' : v.accuracyRate >= 50 ? 'qh-stat-warn' : 'qh-stat-bad';
+  const piaRate = v.totalPredicted > 0 ? Math.round((v.usedPIACount / v.totalPredicted) * 100) : 0;
+
+  summaryEl.innerHTML = `
+    <h3>Quick Hitter Validation</h3>
+    <p class="panel-desc">Comparing predicted 5-20 minute fixes against actual time worked. Accurate = actual time &le; 25 min.</p>
+    <div class="qh-stat-grid">
+      <div class="qh-stat-card">
+        <div class="qh-stat-number">${v.totalPredicted}</div>
+        <div class="qh-stat-label">Predicted Quick Hitters</div>
+      </div>
+      <div class="qh-stat-card">
+        <div class="qh-stat-number">${v.withActualTime}</div>
+        <div class="qh-stat-label">With Time Data</div>
+      </div>
+      <div class="qh-stat-card ${accuracyColor}">
+        <div class="qh-stat-number">${v.accuracyRate != null ? v.accuracyRate + '%' : 'N/A'}</div>
+        <div class="qh-stat-label">Prediction Accuracy</div>
+      </div>
+      <div class="qh-stat-card">
+        <div class="qh-stat-number">${v.accurateCount}</div>
+        <div class="qh-stat-label">Accurate</div>
+      </div>
+      <div class="qh-stat-card qh-stat-bad">
+        <div class="qh-stat-number">${v.underestimatedCount}</div>
+        <div class="qh-stat-label">Underestimated</div>
+      </div>
+      <div class="qh-stat-card qh-stat-pia">
+        <div class="qh-stat-number">${v.usedPIACount} <span class="qh-stat-sub">(${piaRate}%)</span></div>
+        <div class="qh-stat-label">Used PIA / Automation</div>
+      </div>
+    </div>`;
+
+  // Issue type breakdown table
+  const itTbody = $('#qh-issue-type-table tbody');
+  itTbody.innerHTML = '';
+  const sortedTypes = Object.entries(v.byIssueType).sort((a, b) => b[1].count - a[1].count);
+  for (const [label, s] of sortedTypes) {
+    const accRate = (s.count - s.noTime) > 0
+      ? Math.round((s.accurate / (s.count - s.noTime)) * 100) + '%'
+      : 'N/A';
+    const accClass = parseInt(accRate) >= 75 ? 'qh-cell-good' : parseInt(accRate) >= 50 ? 'qh-cell-warn' : 'qh-cell-bad';
+    itTbody.innerHTML += `
+      <tr>
+        <td>${escHtml(label)}</td>
+        <td>${s.count}</td>
+        <td>${s.accurate}</td>
+        <td>${s.underestimated}</td>
+        <td>${s.noTime}</td>
+        <td>${s.usedPIA > 0 ? '<span class="badge badge-pia">' + s.usedPIA + '</span>' : '0'}</td>
+        <td><span class="${accClass}">${accRate}</span></td>
+      </tr>`;
+  }
+
+  // Ticket-level detail table
+  const tktTbody = $('#qh-ticket-table tbody');
+  renderQHTicketRows(tktTbody, v.tickets, 'all');
+
+  // Filter handler
+  const filter = $('#qh-status-filter');
+  filter.onchange = () => renderQHTicketRows(tktTbody, v.tickets, filter.value);
+}
+
+function renderQHTicketRows(tbody, tickets, filterVal) {
+  tbody.innerHTML = '';
+  const filtered = filterVal === 'all' ? tickets
+    : filterVal === 'pia' ? tickets.filter(t => t.usedPIA)
+    : tickets.filter(t => t.status === filterVal);
+
+  for (const t of filtered) {
+    const varianceStr = t.variance != null
+      ? (t.variance > 0 ? `<span class="qh-cell-bad">+${t.variance}m</span>` : `<span class="qh-cell-good">${t.variance}m</span>`)
+      : '—';
+    const verdictBadge = t.status === 'accurate'
+      ? '<span class="badge badge-accurate">Accurate</span>'
+      : t.status === 'underestimated'
+        ? '<span class="badge badge-underestimated">Underestimated</span>'
+        : '<span class="badge badge-nodata">No Data</span>';
+    const piaBadge = t.usedPIA
+      ? `<span class="badge badge-pia" title="${escHtml(t.piaIndicator || '')}">Yes</span>`
+      : '—';
+
+    tbody.innerHTML += `
+      <tr class="qh-row-${t.status}" onclick="openTicketDetail('${t.ticketId}')" style="cursor:pointer">
+        <td>#${t.ticketNumber || t.ticketId}</td>
+        <td title="${escHtml(t.title)}">${escHtml((t.title || '').slice(0, 50))}${(t.title || '').length > 50 ? '…' : ''}</td>
+        <td>${escHtml(t.companyName)}</td>
+        <td>${escHtml(t.issueType)}</td>
+        <td>${t.estimatedMinutes}m</td>
+        <td>${t.actualMinutes != null ? t.actualMinutes + 'm' : '—'}</td>
+        <td>${varianceStr}</td>
+        <td>${piaBadge}</td>
+        <td>${verdictBadge}</td>
+      </tr>`;
+  }
 }
 
 // ── Render Tickets ──

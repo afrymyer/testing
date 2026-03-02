@@ -3348,3 +3348,98 @@ tr.time-leak-moderate td:first-child { border-left: 3px solid rgba(122, 193, 67,
   font-size: 0.92rem;
   color: var(--text);
 }
+
+/* ── Quick Hitter Validation ── */
+.qh-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+.qh-stat-card {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem;
+  text-align: center;
+}
+.qh-stat-number {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--text);
+}
+.qh-stat-sub {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-dim);
+}
+.qh-stat-label {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  margin-top: 0.25rem;
+}
+.qh-stat-good { border-color: rgba(122, 193, 67, 0.4); }
+.qh-stat-good .qh-stat-number { color: var(--accent); }
+.qh-stat-warn { border-color: rgba(255, 193, 7, 0.4); }
+.qh-stat-warn .qh-stat-number { color: #ffc107; }
+.qh-stat-bad { border-color: rgba(231, 76, 60, 0.4); }
+.qh-stat-bad .qh-stat-number { color: #e74c3c; }
+.qh-stat-pia { border-color: rgba(155, 89, 182, 0.4); }
+.qh-stat-pia .qh-stat-number { color: #9b59b6; }
+
+.qh-cell-good { color: var(--accent); font-weight: 600; }
+.qh-cell-warn { color: #ffc107; font-weight: 600; }
+.qh-cell-bad { color: #e74c3c; font-weight: 600; }
+
+.badge-accurate {
+  background: rgba(122, 193, 67, 0.15);
+  color: var(--accent);
+  border: 1px solid rgba(122, 193, 67, 0.3);
+  padding: 0.15rem 0.5rem;
+  border-radius: 100px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+.badge-underestimated {
+  background: rgba(231, 76, 60, 0.15);
+  color: #e74c3c;
+  border: 1px solid rgba(231, 76, 60, 0.3);
+  padding: 0.15rem 0.5rem;
+  border-radius: 100px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+.badge-nodata {
+  background: rgba(127, 140, 141, 0.15);
+  color: #7f8c8d;
+  border: 1px solid rgba(127, 140, 141, 0.3);
+  padding: 0.15rem 0.5rem;
+  border-radius: 100px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+.badge-pia {
+  background: rgba(155, 89, 182, 0.15);
+  color: #9b59b6;
+  border: 1px solid rgba(155, 89, 182, 0.3);
+  padding: 0.15rem 0.5rem;
+  border-radius: 100px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.qh-filter-bar {
+  margin-bottom: 0.75rem;
+}
+.qh-filter-bar .input-field {
+  padding: 0.45rem 0.7rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 0.82rem;
+}
+
+.qh-row-accurate { background: rgba(122, 193, 67, 0.03); }
+.qh-row-underestimated { background: rgba(231, 76, 60, 0.04); }
+.qh-row-no_data { opacity: 0.7; }
