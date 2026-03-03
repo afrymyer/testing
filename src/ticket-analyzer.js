@@ -1083,8 +1083,16 @@ function getDeepAnalytics(analyzedTickets, rawTickets = [], options = {}) {
     doItNowRateMap[entry.issueType] = entry.doItNowRate;
   }
 
+  // Also find all priority values whose label is "Do It Now" (case-insensitive)
+  const doItNowPriorityValues = new Set(
+    Object.entries(priorityMap)
+      .filter(([, label]) => /do\s*it\s*now/i.test(label))
+      .map(([key]) => Number(key))
+  );
+  doItNowPriorityValues.add(doItNowPriorityValue);
+
   const doItNowPredictions = analyzedTickets
-    .filter(t => t.priority !== doItNowPriorityValue) // not already do-it-now
+    .filter(t => !doItNowPriorityValues.has(t.priority)) // not already do-it-now
     .map(t => {
       const itLabel = t.issueTypeName
         ? (t.subIssueTypeName ? `${t.issueTypeName} / ${t.subIssueTypeName}` : t.issueTypeName)
@@ -1130,10 +1138,11 @@ function getDeepAnalytics(analyzedTickets, rawTickets = [], options = {}) {
 
   // ── Overview Charts ──
 
-  // 1. Ticket Volume by Client (top 15)
+  // 1. Ticket Volume by Client (top 15, exclude unknown)
   const clientVolume = {};
   for (const t of analyzedTickets) {
-    const name = t.companyName || 'Unknown';
+    const name = t.companyName;
+    if (!name) continue;
     clientVolume[name] = (clientVolume[name] || 0) + 1;
   }
   const ticketsByClient = Object.entries(clientVolume)
@@ -1167,6 +1176,19 @@ function getDeepAnalytics(analyzedTickets, rawTickets = [], options = {}) {
     }
   }
   const ticketsByDayOfWeek = dayLabels.map((label, i) => ({ day: label, count: dayOfWeekCounts[i] }));
+
+  // 3b. Tickets by Hour of Day
+  const hourCounts = new Array(24).fill(0);
+  for (const t of rawTickets) {
+    if (t.createDate) {
+      const hour = new Date(t.createDate).getHours();
+      hourCounts[hour]++;
+    }
+  }
+  const ticketsByHourOfDay = hourCounts.map((count, h) => {
+    const ampm = h === 0 ? '12 AM' : h < 12 ? `${h} AM` : h === 12 ? '12 PM' : `${h - 12} PM`;
+    return { hour: ampm, count };
+  });
 
   // 4. Ticket Age Distribution (open tickets)
   const now = new Date();
@@ -1212,6 +1234,7 @@ function getDeepAnalytics(analyzedTickets, rawTickets = [], options = {}) {
     ticketsByClient,
     avgResolutionByPriority,
     ticketsByDayOfWeek,
+    ticketsByHourOfDay,
     ticketAgeDistribution,
     automationScoreDistribution,
     quickHitterSplit,

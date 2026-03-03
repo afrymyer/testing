@@ -564,12 +564,6 @@ function renderAnalytics(analytics, summary) {
   // Overview charts (client volume, day of week, age, auto score, donuts)
   renderOverviewCharts(analytics.overviewCharts);
 
-  // Top opportunities
-  renderOpportunities(analytics.topOpportunities);
-
-  // ROI projection
-  renderROI(analytics.roiProjection);
-
   // SDE Metrics tab
   renderSDEMetrics();
 
@@ -692,137 +686,6 @@ function renderTrendChart(trendData) {
   const total = trendData.reduce((s, d) => s + d.count, 0);
   const avg = (total / trendData.length).toFixed(1);
   note.textContent = `${trendData.length} days shown | ${total} total tickets | ${avg} avg/day`;
-}
-
-function renderOpportunities(topOpportunities) {
-  const container = $('#opportunities-list');
-
-  if (!topOpportunities || topOpportunities.length === 0) {
-    container.innerHTML = '<div class="empty-state"><p>No automation opportunities identified yet.</p></div>';
-    return;
-  }
-
-  container.innerHTML = `
-    <p class="panel-desc" style="margin-bottom: 12px; opacity: 0.6; font-size: 0.85rem;">
-      Impact Score = (Avg Automation Score &times; Ticket Count &times; Minutes Saveable) / 100. Click an opportunity to see its tickets.
-    </p>` +
-    topOpportunities.map((opp, i) => `
-    <div class="opportunity-card opp-clickable" onclick="drillIntoOpportunity('${escHtml(opp.category)}')" title="Click to view ${opp.count} tickets in this category">
-      <div class="opp-rank">#${i + 1}</div>
-      <div class="opp-details">
-        <div class="opp-name">${opp.category}</div>
-        <div class="opp-stats">
-          <span>${opp.count} tickets</span>
-          <span>Auto: ${opp.avgAutomationScore}%</span>
-          <span>${opp.totalMinutesSaveable} min saveable</span>
-        </div>
-      </div>
-      <div class="opp-impact">
-        <div class="opp-impact-number">${opp.impactScore}</div>
-        <div class="opp-impact-label">Impact Score</div>
-      </div>
-    </div>
-  `).join('');
-}
-
-function drillIntoOpportunity(categoryLabel) {
-  // Filter tickets to this category and display them
-  const matched = allTickets.filter(t => t.categoryLabel === categoryLabel);
-  if (matched.length === 0) {
-    showToast(`No tickets found for "${categoryLabel}"`);
-    return;
-  }
-
-  // Build a modal showing the tickets in this opportunity
-  const priorityLabel = (t) => currentPriorityMap[t.priority] || '';
-  const html = matched.map(t => {
-    const pLabel = currentPriorityMap[t.priority] || '';
-    const pClass = pLabel ? `badge-priority-${pLabel.toLowerCase()}` : '';
-    const scoreClass = t.automationScore >= 80 ? 'high' : t.automationScore >= 50 ? 'medium' : 'low';
-    const ai = t.aiInsights;
-    return `
-      <div class="ticket-card" onclick="closeOppDrill(); openTicketDetail('${t.ticketId}')" style="cursor:pointer;">
-        <div class="ticket-header">
-          <span class="ticket-title">${escHtml(t.title)}</span>
-          <span class="ticket-id">#${t.ticketNumber || t.ticketId}</span>
-        </div>
-        <div class="ticket-meta">
-          <span class="badge badge-category">${t.categoryLabel}</span>
-          ${pLabel ? `<span class="badge ${pClass}">${pLabel}</span>` : ''}
-          <span class="badge badge-readiness badge-readiness-${t.automationReadiness || 'manual'}">${t.automationReadinessLabel || 'Manual'}</span>
-          ${t.isQuickHitter ? '<span class="badge badge-quick">Quick Hitter</span>' : ''}
-          ${t.estimatedMinutes ? `<span class="badge badge-time">~${t.estimatedMinutes} min</span>` : ''}
-          ${ai && ai.suggestedResolution ? `<div class="ticket-ai-resolution" style="margin-top:6px;">${escHtml(ai.suggestedResolution)}</div>` : ''}
-          <div class="score-bar">
-            Auto:
-            <div class="score-track">
-              <div class="score-fill ${scoreClass}" style="width: ${t.automationScore}%"></div>
-            </div>
-            ${t.automationScore}%
-          </div>
-        </div>
-      </div>`;
-  }).join('');
-
-  // Show in a modal overlay
-  const overlay = document.createElement('div');
-  overlay.id = 'opp-drill-overlay';
-  overlay.className = 'modal-overlay active';
-  overlay.innerHTML = `
-    <div class="modal opp-drill-modal" style="max-width: 800px; max-height: 80vh; overflow-y: auto;">
-      <div class="modal-header">
-        <h2>${escHtml(categoryLabel)} — ${matched.length} Ticket${matched.length !== 1 ? 's' : ''}</h2>
-        <button class="modal-close" onclick="closeOppDrill()">&times;</button>
-      </div>
-      <div class="modal-body" style="padding: 16px;">
-        ${html}
-      </div>
-    </div>`;
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) closeOppDrill();
-  });
-  document.body.appendChild(overlay);
-}
-
-function closeOppDrill() {
-  const overlay = document.getElementById('opp-drill-overlay');
-  if (overlay) overlay.remove();
-}
-
-function renderROI(roi) {
-  const container = $('#roi-content');
-
-  if (!roi) {
-    container.innerHTML = '<div class="empty-state"><p>No ROI data available.</p></div>';
-    return;
-  }
-
-  container.innerHTML = `
-    <div class="roi-card">
-      <div class="roi-number">${roi.totalMinutesInBatch}</div>
-      <div class="roi-label">Total Minutes in Batch</div>
-    </div>
-    <div class="roi-card">
-      <div class="roi-number">${roi.automatableMinutes}</div>
-      <div class="roi-label">Automatable Minutes</div>
-    </div>
-    <div class="roi-card">
-      <div class="roi-number">${roi.monthlySavingsHours}h</div>
-      <div class="roi-label">Monthly Hours Saved</div>
-    </div>
-    <div class="roi-card">
-      <div class="roi-number">${roi.annualSavingsHours}h</div>
-      <div class="roi-label">Annual Hours Saved</div>
-    </div>
-    <div class="roi-card roi-highlight">
-      <div class="roi-number">$${roi.annualCostSavings.toLocaleString()}</div>
-      <div class="roi-label">Annual Cost Savings</div>
-    </div>
-    <div class="roi-card">
-      <div class="roi-number">$${roi.hourlyRateUsed}/hr</div>
-      <div class="roi-label">Rate Used</div>
-    </div>
-  `;
 }
 
 // ── Render AI Batch Insights ──
@@ -1428,6 +1291,7 @@ function renderOverviewCharts(charts) {
   renderHorizontalBars('client-volume-bars', charts.ticketsByClient, 'client', 'count');
   renderHorizontalBars('resolution-by-priority-bars', charts.avgResolutionByPriority, 'priority', 'avgMinutes', 'min');
   renderHorizontalBars('day-of-week-bars', charts.ticketsByDayOfWeek, 'day', 'count');
+  renderHorizontalBars('hour-of-day-bars', charts.ticketsByHourOfDay, 'hour', 'count');
   renderHorizontalBars('ticket-age-bars', charts.ticketAgeDistribution, 'bucket', 'count');
   renderHorizontalBars('auto-score-bars', charts.automationScoreDistribution, 'range', 'count');
   renderDonut('qh-split-donut', [
