@@ -1291,7 +1291,7 @@ function renderOverviewCharts(charts) {
   renderHorizontalBars('client-volume-bars', charts.ticketsByClient, 'client', 'count');
   renderHorizontalBars('resolution-by-priority-bars', charts.avgResolutionByPriority, 'priority', 'avgMinutes', 'min');
   renderHorizontalBars('day-of-week-bars', charts.ticketsByDayOfWeek, 'day', 'count');
-  renderHorizontalBars('hour-of-day-bars', charts.ticketsByHourOfDay, 'hour', 'count');
+  renderHeatmap('hour-of-day-bars', charts.ticketsByHourOfDay, 'hour', 'count');
   renderHorizontalBars('ticket-age-bars', charts.ticketAgeDistribution, 'bucket', 'count');
   renderHorizontalBars('auto-score-bars', charts.automationScoreDistribution, 'range', 'count');
   renderDonut('qh-split-donut', [
@@ -1301,6 +1301,10 @@ function renderOverviewCharts(charts) {
   renderDonut('pia-coverage-donut', [
     { label: 'PIA Automated', value: charts.piaCoverage.piaUsed, color: '#a78bfa' },
     { label: 'Manual', value: charts.piaCoverage.manual, color: '#64748b' },
+  ]);
+  renderDonut('zero-hours-donut', [
+    { label: 'Zero Hours', value: charts.zeroHoursCompleted.zeroHours, color: '#ef0b3c' },
+    { label: 'Has Hours', value: charts.zeroHoursCompleted.hasHours, color: '#328d46' },
   ]);
 }
 
@@ -1330,6 +1334,24 @@ function renderHorizontalBars(containerId, data, labelKey, valueKey, suffix) {
         <span class="cat-bar-count">${d[valueKey]}${sfx}</span>
       </div>`;
   });
+}
+
+function renderHeatmap(containerId, data, labelKey, valueKey) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  if (!data || data.length === 0) {
+    el.innerHTML = '<p class="empty-state-text">No data available</p>';
+    return;
+  }
+  const maxVal = Math.max(...data.map(d => d[valueKey]), 1);
+  el.innerHTML = '<div class="heatmap-row">' + data.map(d => {
+    const intensity = maxVal > 0 ? d[valueKey] / maxVal : 0;
+    const bg = `rgba(50, 141, 70, ${0.1 + intensity * 0.85})`;
+    return `<div class="heatmap-cell" style="background:${bg}" title="${d[labelKey]}: ${d[valueKey]}">
+      <span class="heatmap-label">${escHtml(String(d[labelKey]))}</span>
+      <span class="heatmap-count">${d[valueKey]}</span>
+    </div>`;
+  }).join('') + '</div>';
 }
 
 function renderDonut(containerId, segments) {

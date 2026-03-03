@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=25">
+  <link rel="stylesheet" href="style.css?v=26">
 </head>
 <body>
   <header>
@@ -204,7 +204,7 @@
         </div>
 
         <!-- Row: Automation Score Distribution + Donut Charts -->
-        <div class="overview-grid overview-grid-3">
+        <div class="overview-grid overview-grid-4">
           <div class="panel-card">
             <h3>Automation Score Distribution</h3>
             <p class="panel-desc">Breakdown of tickets by automation potential</p>
@@ -219,6 +219,11 @@
             <h3>PIA Automation Coverage</h3>
             <p class="panel-desc">Tickets resolved via PIA vs manual</p>
             <div id="pia-coverage-donut" class="donut-chart-wrap"></div>
+          </div>
+          <div class="panel-card">
+            <h3>Completed with Zero Hours</h3>
+            <p class="panel-desc">Completed tickets with no time logged</p>
+            <div id="zero-hours-donut" class="donut-chart-wrap"></div>
           </div>
         </div>
 
@@ -598,6 +603,6 @@
     <span class="footer-ai">AI-Powered</span>
   </footer>
 
-  <script src="app.js?v=25"></script>
+  <script src="app.js?v=26"></script>
 </body>
 </html>

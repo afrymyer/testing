@@ -1230,6 +1230,12 @@ function getDeepAnalytics(analyzedTickets, rawTickets = [], options = {}) {
   const manualCount = analyzedTickets.length - piaUsedCount;
   const piaCoverage = { piaUsed: piaUsedCount, manual: manualCount, total: analyzedTickets.length };
 
+  // 8. Zero Hours on Completed Tickets
+  const completedTickets = analyzedTickets.filter(t => t.status === 5 || t.status === 'Complete');
+  const zeroHoursCount = completedTickets.filter(t => !t.workedHours || t.workedHours === 0).length;
+  const hasHoursCount = completedTickets.length - zeroHoursCount;
+  const zeroHoursCompleted = { zeroHours: zeroHoursCount, hasHours: hasHoursCount, total: completedTickets.length };
+
   const overviewCharts = {
     ticketsByClient,
     avgResolutionByPriority,
@@ -1239,6 +1245,7 @@ function getDeepAnalytics(analyzedTickets, rawTickets = [], options = {}) {
     automationScoreDistribution,
     quickHitterSplit,
     piaCoverage,
+    zeroHoursCompleted,
   };
 
   return {
