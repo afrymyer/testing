@@ -1307,7 +1307,7 @@ function renderQHTicketRows(tbody, tickets, filterVal) {
         ? '<span class="badge badge-underestimated">Underestimated</span>'
         : '<span class="badge badge-nodata">No Data</span>';
     const piaBadge = t.usedPIA
-      ? `<span class="badge badge-pia" title="${escHtml(t.piaIndicator || '')}">Yes</span>`
+      ? `<span class="badge badge-pia" title="${escHtml(t.piaIndicator || '')} (${t.piaSource || 'detected'})">${t.piaSource === 'notes' ? 'Yes (Notes)' : 'Yes'}</span>`
       : '—';
 
     tbody.innerHTML += `

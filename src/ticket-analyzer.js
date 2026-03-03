@@ -232,30 +232,43 @@ function scoreResolution(resolutionText) {
 
 /**
  * Detect whether PIA (Process Intelligent Automation) or Datto RMM
- * automation was used to resolve a ticket by scanning resolution and
- * description text for automation platform indicators.
+ * automation was used to resolve a ticket.
+ *
+ * Primary detection: `piaDetectedInNotes` flag set by server.js after
+ * scanning internal ticket notes for the PIA API account name/resource.
+ * This is the authoritative source — when the PIA API account creates
+ * an internal note on a ticket, it means PIA acted on that ticket.
+ *
+ * Fallback: keyword scan of resolution/description text for automation
+ * platform indicators (less reliable, used when notes aren't available).
  */
-const PIA_INDICATORS = [
+const PIA_KEYWORD_INDICATORS = [
   'pia', 'process intelligent automation', 'automated via',
   'ran script', 'executed script', 'automation script', 'auto-remediated',
-  'auto remediated', 'script ran', 'script executed', 'powershell script',
+  'auto remediated', 'script ran', 'script executed',
   'datto rmm', 'rmm script', 'rmm job', 'component ran', 'datto job',
   'automated fix', 'automated resolution', 'self-heal', 'auto-resolved',
-  'bulk action', 'm365 admin', 'pia portal',
+  'bulk action', 'pia portal',
 ];
 
 function detectPIA(ticket) {
+  // Primary: note-based detection (PIA API account found in internal notes)
+  if (ticket.piaDetectedInNotes) {
+    return { usedPIA: true, piaIndicator: 'internal note (PIA API account)', piaSource: 'notes' };
+  }
+
+  // Fallback: keyword scan of resolution/description
   const text = [
     ticket.resolution || '',
     ticket.description || '',
   ].join(' ').toLowerCase();
 
-  for (const kw of PIA_INDICATORS) {
+  for (const kw of PIA_KEYWORD_INDICATORS) {
     if (text.includes(kw)) {
-      return { usedPIA: true, piaIndicator: kw };
+      return { usedPIA: true, piaIndicator: kw, piaSource: 'keyword' };
     }
   }
-  return { usedPIA: false, piaIndicator: null };
+  return { usedPIA: false, piaIndicator: null, piaSource: null };
 }
 
 /**
@@ -365,6 +378,9 @@ function analyzeTicket(ticket) {
         : 'This ticket does not match any known automation patterns. Manual review required to determine resolution path.',
       resolutionAnalysis: resolutionScore.reasons,
       quickWinValue: 0,
+      usedPIA: piaResult.usedPIA,
+      piaIndicator: piaResult.piaIndicator,
+      piaSource: piaResult.piaSource,
     };
   }
 
@@ -412,6 +428,7 @@ function analyzeTicket(ticket) {
       quickWinValue: 0,
       usedPIA: piaResult.usedPIA,
       piaIndicator: piaResult.piaIndicator,
+      piaSource: piaResult.piaSource,
     };
   }
 
@@ -474,6 +491,7 @@ function analyzeTicket(ticket) {
     quickWinValue: isQuickHitter ? Math.round((adjustedAutoScore * (20 - bestMatch.avgMinutes + 1) * adjustedConfidence) / 100) : 0,
     usedPIA: piaResult.usedPIA,
     piaIndicator: piaResult.piaIndicator,
+    piaSource: piaResult.piaSource,
   };
 }
 
@@ -1005,6 +1023,7 @@ function getDeepAnalytics(analyzedTickets, rawTickets = [], options = {}) {
       status: !hasTime ? 'no_data' : (isAccurate ? 'accurate' : 'underestimated'),
       usedPIA: t.usedPIA,
       piaIndicator: t.piaIndicator,
+      piaSource: t.piaSource,
       automationScore: t.automationScore,
     });
   }

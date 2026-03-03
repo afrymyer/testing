@@ -287,6 +287,49 @@ class AutotaskClient {
   }
 
   /**
+   * Fetch internal ticket notes for a set of ticket IDs in batches.
+   * Returns a map of ticketID -> array of note objects.
+   * Each note has: id, ticketID, title, description, noteType, createDateTime,
+   * creatorResourceID, publish (internal vs external).
+   */
+  async getNotesForTickets(ticketIds) {
+    if (!ticketIds || ticketIds.length === 0) return {};
+
+    const notesMap = {};
+    let failedBatches = 0;
+    const batchSize = 50;
+
+    for (let i = 0; i < ticketIds.length; i += batchSize) {
+      const batch = ticketIds.slice(i, i + batchSize);
+
+      const filter = {
+        filter: batch.length > 1
+          ? [{ op: 'or', items: batch.map(id => ({ op: 'eq', field: 'ticketID', value: id })) }]
+          : [{ op: 'eq', field: 'ticketID', value: batch[0] }],
+        MaxRecords: 500,
+      };
+
+      try {
+        const notes = await this.queryAll('/TicketNotes/query', filter);
+        for (const note of notes) {
+          const tid = note.ticketID;
+          if (!notesMap[tid]) notesMap[tid] = [];
+          notesMap[tid].push(note);
+        }
+      } catch (err) {
+        failedBatches++;
+        console.warn(`[TicketNotes] Batch ${Math.floor(i / batchSize) + 1} failed: ${err.message}`);
+      }
+    }
+
+    if (failedBatches > 0) {
+      console.warn(`[TicketNotes] ${failedBatches} batch(es) failed out of ${Math.ceil(ticketIds.length / batchSize)}.`);
+    }
+
+    return notesMap;
+  }
+
+  /**
    * Fetch company names for a set of company IDs.
    * Returns a map of companyID -> companyName.
    */

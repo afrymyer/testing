@@ -165,7 +165,42 @@ app.get('/api/tickets', async (req, res) => {
     // Resolve issue type and sub-issue type labels
     const { issueTypeMap, subIssueTypeMap } = await getIssueTypeMaps();
 
-    // Attach workedHours, assignedResourceID, companyName, and issue type labels to each ticket
+    // Fetch internal notes to detect PIA usage
+    let piaTicketIds = new Set();
+    if (autotaskClient && tickets.length > 0) {
+      try {
+        const ticketIds = tickets.map(t => t.id).filter(Boolean);
+        const notesMap = await autotaskClient.getNotesForTickets(ticketIds);
+
+        // PIA API account identifiers (configurable via env, comma-separated)
+        // Can match by resource ID, resource name, or text in note body
+        const piaIdentifiers = (process.env.PIA_API_IDENTIFIERS || 'pia,api,automation')
+          .split(',')
+          .map(s => s.trim().toLowerCase())
+          .filter(Boolean);
+
+        for (const [ticketId, notes] of Object.entries(notesMap)) {
+          for (const note of notes) {
+            // Check if the note creator or note content indicates PIA
+            const creatorName = (note.creatorResourceName || '').toLowerCase();
+            const noteTitle = (note.title || '').toLowerCase();
+            const noteBody = (note.description || '').toLowerCase();
+            const noteText = `${creatorName} ${noteTitle} ${noteBody}`;
+
+            const piaMatch = piaIdentifiers.some(id => noteText.includes(id));
+            if (piaMatch) {
+              piaTicketIds.add(Number(ticketId));
+              break; // one match is enough per ticket
+            }
+          }
+        }
+        console.log(`[API] PIA detection: ${piaTicketIds.size}/${ticketIds.length} tickets have PIA notes (identifiers: ${piaIdentifiers.join(', ')})`);
+      } catch (err) {
+        console.warn(`[API] Note enrichment for PIA detection failed: ${err.message}`);
+      }
+    }
+
+    // Attach workedHours, assignedResourceID, companyName, issue type labels, and PIA flag
     const enrichedTickets = tickets.map(t => ({
       ...t,
       workedHours: hoursMap[t.id] || 0,
@@ -173,6 +208,7 @@ app.get('/api/tickets', async (req, res) => {
       companyName: companyNameMap[t.companyID] || null,
       issueTypeName: (issueTypeMap && t.issueType) ? issueTypeMap[t.issueType] || null : null,
       subIssueTypeName: (subIssueTypeMap && t.subIssueType) ? subIssueTypeMap[t.subIssueType] || null : null,
+      piaDetectedInNotes: piaTicketIds.has(t.id),
     }));
 
     // Filter out zero worked-hours tickets if requested
