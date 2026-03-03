@@ -961,27 +961,6 @@ function renderQHValidation(qhValidation) {
       </div>
     </div>`;
 
-  // Issue type breakdown table
-  const itTbody = $('#qh-issue-type-table tbody');
-  itTbody.innerHTML = '';
-  const sortedTypes = Object.entries(v.byIssueType).sort((a, b) => b[1].count - a[1].count);
-  for (const [label, s] of sortedTypes) {
-    const accRate = (s.count - s.noTime) > 0
-      ? Math.round((s.accurate / (s.count - s.noTime)) * 100) + '%'
-      : 'N/A';
-    const accClass = parseInt(accRate) >= 75 ? 'qh-cell-good' : parseInt(accRate) >= 50 ? 'qh-cell-warn' : 'qh-cell-bad';
-    itTbody.innerHTML += `
-      <tr>
-        <td>${escHtml(label)}</td>
-        <td>${s.count}</td>
-        <td>${s.accurate}</td>
-        <td>${s.underestimated}</td>
-        <td>${s.noTime}</td>
-        <td>${s.usedPIA > 0 ? '<span class="badge badge-pia">' + s.usedPIA + '</span>' : '0'}</td>
-        <td><span class="${accClass}">${accRate}</span></td>
-      </tr>`;
-  }
-
   // Ticket-level detail table
   const tktTbody = $('#qh-ticket-table tbody');
   renderQHTicketRows(tktTbody, v.tickets, 'all');
