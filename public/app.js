@@ -1408,6 +1408,7 @@ function renderQHTicketRows(tbody, tickets, filterVal) {
         <td onclick="openTicketDetail('${t.ticketId}')" style="cursor:pointer" title="${escHtml(t.title)}">${escHtml((t.title || '').slice(0, 50))}${(t.title || '').length > 50 ? '...' : ''}</td>
         <td>${escHtml(t.companyName)}</td>
         <td>${escHtml(t.issueType)}</td>
+        <td>${escHtml(t.currentPriority || '—')}</td>
         <td>${t.estimatedMinutes}m</td>
         <td>${t.actualMinutes != null ? t.actualMinutes + 'm' : '—'}</td>
         <td>${varianceStr}</td>

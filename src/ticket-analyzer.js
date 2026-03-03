@@ -1017,6 +1017,7 @@ function getDeepAnalytics(analyzedTickets, rawTickets = [], options = {}) {
       title: t.title,
       companyName: t.companyName || 'Unknown',
       issueType: itLabel,
+      currentPriority: priorityMap[t.priority] || `P${t.priority}`,
       estimatedMinutes: estimatedMin,
       actualMinutes: hasTime ? Math.round(actualMin) : null,
       variance: hasTime ? Math.round(actualMin - estimatedMin) : null,
