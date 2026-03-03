@@ -723,6 +723,31 @@ main {
   letter-spacing: 0.03em;
 }
 
+.data-table th.sortable {
+  cursor: pointer;
+  user-select: none;
+  position: relative;
+  padding-right: 1.2em;
+}
+
+.data-table th.sortable::after {
+  content: '⇅';
+  position: absolute;
+  right: 0.3em;
+  opacity: 0.3;
+  font-size: 0.75em;
+}
+
+.data-table th.sortable.sort-asc::after {
+  content: '▲';
+  opacity: 0.8;
+}
+
+.data-table th.sortable.sort-desc::after {
+  content: '▼';
+  opacity: 0.8;
+}
+
 .data-table td {
   color: var(--text);
 }

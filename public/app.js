@@ -1270,16 +1270,69 @@ function renderDoItNow(dinAnalysis) {
     });
   });
 
-  // --- Predictions Table ---
-  predTbody.innerHTML = '';
+  // --- Predictions Table with sorting & filtering ---
   const predictions = dinAnalysis.predictions || [];
+  let dinSortKey = 'predictionScore';
+  let dinSortAsc = false;
 
-  if (predictions.length === 0) {
-    predTbody.innerHTML = '<tr><td colspan="8" class="empty-state-text">No strong predictions — tickets already correctly prioritized</td></tr>';
-    $('#din-set-priority-btn').disabled = true;
-  } else {
-    for (const p of predictions) {
+  function dinGetActualMin(p) { return p.workedHours > 0 ? Math.round(p.workedHours * 60) : null; }
+  function dinGetVariance(p) {
+    const actual = dinGetActualMin(p);
+    return (p.estimatedMinutes != null && actual != null) ? actual - p.estimatedMinutes : null;
+  }
+
+  function dinSortVal(p, key) {
+    switch (key) {
+      case 'ticketNumber': return p.ticketNumber || p.ticketId;
+      case 'companyName': return (p.companyName || '').toLowerCase();
+      case 'issueType': return (p.issueType || '').toLowerCase();
+      case 'currentPriority': return (p.currentPriority || '').toLowerCase();
+      case 'estimatedMinutes': return p.estimatedMinutes != null ? p.estimatedMinutes : -1;
+      case 'actualMinutes': return dinGetActualMin(p) != null ? dinGetActualMin(p) : -1;
+      case 'variance': return dinGetVariance(p) != null ? dinGetVariance(p) : -99999;
+      case 'usedPIA': return p.usedPIA ? 1 : 0;
+      case 'predictionScore': return p.predictionScore;
+      case 'isQuickHitter': return p.isQuickHitter ? 1 : 0;
+      default: return 0;
+    }
+  }
+
+  function dinFilterPredictions(list, filter) {
+    switch (filter) {
+      case 'has_time': return list.filter(p => p.workedHours > 0);
+      case 'no_time': return list.filter(p => !p.workedHours || p.workedHours === 0);
+      case 'pia': return list.filter(p => p.usedPIA);
+      case 'quick_hitter': return list.filter(p => p.isQuickHitter);
+      default: return list;
+    }
+  }
+
+  function renderDINPredRows() {
+    predTbody.innerHTML = '';
+    const filter = $('#din-status-filter').value;
+    let filtered = dinFilterPredictions([...predictions], filter);
+
+    filtered.sort((a, b) => {
+      const av = dinSortVal(a, dinSortKey);
+      const bv = dinSortVal(b, dinSortKey);
+      if (av < bv) return dinSortAsc ? -1 : 1;
+      if (av > bv) return dinSortAsc ? 1 : -1;
+      return 0;
+    });
+
+    if (filtered.length === 0) {
+      predTbody.innerHTML = '<tr><td colspan="12" class="empty-state-text">No matching predictions</td></tr>';
+      return;
+    }
+
+    for (const p of filtered) {
       const scoreClass = p.predictionScore >= 70 ? 'qh-cell-bad' : p.predictionScore >= 50 ? 'qh-cell-warn' : '';
+      const estMin = p.estimatedMinutes != null ? p.estimatedMinutes : '—';
+      const actualMin = dinGetActualMin(p);
+      const actualStr = actualMin != null ? actualMin : '—';
+      const variance = dinGetVariance(p);
+      const varianceStr = variance != null ? (variance > 0 ? '+' + variance : '' + variance) : '—';
+      const varianceClass = variance != null ? (variance > 0 ? 'time-over' : 'time-under') : '';
       predTbody.innerHTML += `
         <tr data-ticket-id="${p.ticketId}">
           <td class="qh-check-col" onclick="event.stopPropagation()"><input type="checkbox" class="din-row-check" data-ticket-id="${p.ticketId}" /></td>
@@ -1288,11 +1341,58 @@ function renderDoItNow(dinAnalysis) {
           <td>${escHtml(p.companyName)}</td>
           <td>${escHtml(p.issueType)}</td>
           <td>${escHtml(p.currentPriority)}</td>
+          <td>${estMin}</td>
+          <td>${actualStr}</td>
+          <td class="${varianceClass}">${varianceStr}</td>
+          <td>${p.usedPIA ? '<span class="badge badge-pia">Yes</span>' : 'No'}</td>
           <td><span class="${scoreClass}">${p.predictionScore}</span></td>
           <td>${p.isQuickHitter ? '<span class="badge badge-accurate">Yes</span>' : 'No'}</td>
         </tr>`;
     }
   }
+
+  // Update sort indicators on headers
+  function dinUpdateSortHeaders() {
+    document.querySelectorAll('#din-predictions-table thead th.sortable').forEach(th => {
+      th.classList.remove('sort-asc', 'sort-desc');
+      if (th.dataset.sort === dinSortKey) {
+        th.classList.add(dinSortAsc ? 'sort-asc' : 'sort-desc');
+      }
+    });
+  }
+
+  // Column header click to sort
+  document.querySelectorAll('#din-predictions-table thead th.sortable').forEach(th => {
+    th.style.cursor = 'pointer';
+    th.addEventListener('click', () => {
+      const key = th.dataset.sort;
+      if (dinSortKey === key) {
+        dinSortAsc = !dinSortAsc;
+      } else {
+        dinSortKey = key;
+        dinSortAsc = true;
+      }
+      dinUpdateSortHeaders();
+      renderDINPredRows();
+    });
+  });
+
+  // Filter dropdown
+  $('#din-status-filter').onchange = () => {
+    renderDINPredRows();
+    updateDINSelectedCount();
+  };
+
+  // Populate priority dropdown
+  const dinPrioritySelect = $('#din-priority-select');
+  dinPrioritySelect.innerHTML = '<option value="">Set Priority To...</option>';
+  for (const [val, label] of Object.entries(currentPriorityMap)) {
+    dinPrioritySelect.innerHTML += `<option value="${val}">${escHtml(label)}</option>`;
+  }
+
+  // Initial render
+  dinUpdateSortHeaders();
+  renderDINPredRows();
 
   // Select-all checkbox
   const dinCheckAll = $('#din-check-all');
@@ -1301,14 +1401,28 @@ function renderDoItNow(dinAnalysis) {
     updateDINSelectedCount();
   };
 
+  // "Select All Visible" button
+  $('#din-select-all').onclick = () => {
+    predTbody.querySelectorAll('.din-row-check').forEach(cb => { cb.checked = true; });
+    updateDINSelectedCount();
+  };
+
   // Individual checkbox change
   predTbody.addEventListener('change', (e) => {
     if (e.target.classList.contains('din-row-check')) updateDINSelectedCount();
   });
 
-  // Set priority button
+  // Set priority button — use selected priority from dropdown
   const dinBtn = $('#din-set-priority-btn');
-  dinBtn.onclick = () => dinUpdatePriority(predTbody, dinAnalysis.doItNowPriorityValue, dinAnalysis.doItNowLabel);
+  dinBtn.onclick = () => {
+    const selectedPriority = dinPrioritySelect.value;
+    const selectedLabel = dinPrioritySelect.options[dinPrioritySelect.selectedIndex]?.text || '';
+    if (!selectedPriority) {
+      dinUpdatePriority(predTbody, dinAnalysis.doItNowPriorityValue, dinAnalysis.doItNowLabel);
+    } else {
+      dinUpdatePriority(predTbody, Number(selectedPriority), selectedLabel);
+    }
+  };
 
   // Correlation table
   renderDoItNowCorrelation(dinAnalysis.correlation);

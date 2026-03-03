@@ -1119,6 +1119,8 @@ function getDeepAnalytics(analyzedTickets, rawTickets = [], options = {}) {
         historicalRate,
         isQuickHitter,
         estimatedMinutes: t.estimatedMinutes,
+        workedHours: t.workedHours || 0,
+        usedPIA: !!t.usedPIA,
         automationScore: t.automationScore,
       };
     })
