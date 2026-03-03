@@ -1022,17 +1022,23 @@ function renderAIInsights(insights) {
   if (insights.automationOpportunities && insights.automationOpportunities.length > 0) {
     autoContainer.innerHTML = `
       <h3>Automation Opportunities</h3>
-      <p class="panel-desc">High-impact automation targets identified by AI analysis</p>
+      <p class="panel-desc">High-impact automation targets identified by AI analysis — with specific implementation guidance per issue type</p>
       <div class="ai-auto-list">
         ${insights.automationOpportunities.map(opp => `
           <div class="ai-auto-card">
             <div class="ai-auto-header">
               <span class="ai-auto-title">${escHtml(opp.opportunity)}</span>
-              ${opp.estimatedTimeSaved ? `<span class="ai-auto-time">${opp.estimatedTimeSaved} min/mo saved</span>` : ''}
+              <div class="ai-auto-badges">
+                ${opp.method ? `<span class="badge badge-pia">${escHtml((opp.method || '').replace(/_/g, ' '))}</span>` : ''}
+                ${opp.estimatedTimeSaved ? `<span class="ai-auto-time">${opp.estimatedTimeSaved} min/mo saved</span>` : ''}
+                ${opp.currentVolume ? `<span class="ai-auto-volume">${opp.currentVolume} tickets in batch</span>` : ''}
+                ${opp.piaCandidate ? `<span class="badge badge-pia-candidate">PIA Candidate</span>` : ''}
+              </div>
             </div>
             <p class="ai-auto-desc">${escHtml(opp.description)}</p>
+            ${opp.estimatedSetupHours ? `<p class="ai-auto-setup">Setup estimate: ~${opp.estimatedSetupHours} hours</p>` : ''}
             ${opp.ticketTypes && opp.ticketTypes.length > 0 ? `
-              <div class="ai-auto-types">Affects: ${opp.ticketTypes.map(t => `<span class="badge badge-category">${escHtml(t)}</span>`).join(' ')}</div>
+              <div class="ai-auto-types">Issue Types: ${opp.ticketTypes.map(t => `<span class="badge badge-category">${escHtml(t)}</span>`).join(' ')}</div>
             ` : ''}
           </div>
         `).join('')}
@@ -1788,6 +1794,18 @@ function openTicketDetail(ticketId) {
               ${t.aiInsights.sentiment.cues && t.aiInsights.sentiment.cues.length ? `
                 <p class="ai-sentiment-cues">Cues: ${t.aiInsights.sentiment.cues.map(c => `<em>"${escHtml(c)}"</em>`).join(', ')}</p>
               ` : ''}
+            </div>
+          ` : ''}
+          ${t.aiInsights.automationSuggestion ? `
+            <div class="ai-field ai-auto-suggestion">
+              <div class="ai-field-label">Automation Suggestion</div>
+              <div class="ai-auto-suggestion-detail">
+                <span class="badge ${t.aiInsights.automationSuggestion.canAutomate ? 'badge-accurate' : 'badge-nodata'}">${t.aiInsights.automationSuggestion.canAutomate ? 'Can Automate' : 'Manual Only'}</span>
+                ${t.aiInsights.automationSuggestion.method && t.aiInsights.automationSuggestion.method !== 'none' ? `<span class="badge badge-pia">${escHtml(t.aiInsights.automationSuggestion.method.replace(/_/g, ' '))}</span>` : ''}
+                ${t.aiInsights.automationSuggestion.estimatedTimeSavedPerTicket ? `<span class="badge badge-quick-win">Saves ~${t.aiInsights.automationSuggestion.estimatedTimeSavedPerTicket} min/ticket</span>` : ''}
+              </div>
+              <p class="ai-auto-suggestion-desc">${escHtml(t.aiInsights.automationSuggestion.description || '')}</p>
+              ${t.aiInsights.automationSuggestion.estimatedSetupHours ? `<p class="ai-auto-suggestion-setup">Setup estimate: ~${t.aiInsights.automationSuggestion.estimatedSetupHours} hours</p>` : ''}
             </div>
           ` : ''}
           ${t.aiInsights.reasoning ? `

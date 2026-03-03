@@ -49,6 +49,10 @@ ${categoryList}
 AVAILABLE AUTOMATION SCRIPTS:
 ${scriptList}
 
+Each ticket includes an "issueType" and "subIssueType" field from Autotask. These are the official Autotask classifications. Use them alongside the ticket content to make more accurate assessments. If issueType/subIssueType are null, rely on ticket content alone.
+
+Each ticket also includes a "usedPIA" boolean indicating whether PIA (Process Intelligent Automation) or Datto RMM scripts were detected in the resolution. Factor this into your automation assessment.
+
 For each ticket, provide:
 1. category: best-fit category ID from the list above (or "uncategorized")
 2. confidence: 0-100 how confident you are in the categorization
@@ -59,6 +63,13 @@ For each ticket, provide:
 7. scriptReasoning: 1 sentence explaining why you chose these scripts (or why none apply). Example: "clear-print-spooler.ps1 matches because user describes stuck print jobs in queue" or "No scripts apply — this requires physical hardware inspection"
 8. escalation: boolean — should this be escalated rather than handled at L1?
 9. reasoning: 1-2 sentence explanation of your analysis
+
+12. automationSuggestion: object with:
+   - "canAutomate": boolean — could this specific ticket type be automated (partially or fully)?
+   - "method": "pia_script" | "datto_rmm" | "power_automate" | "self_service" | "runbook" | "none" — the best automation approach
+   - "description": 1-2 sentence specific description of HOW to automate this. Be concrete — name the tool, the trigger, and the action. Example: "Create a PIA script that monitors for locked accounts and auto-unlocks after verifying with the user via Teams bot" or "Add a self-service portal form for password resets that triggers the reset-ad-password.ps1 script via Datto RMM"
+   - "estimatedSetupHours": number — rough hours to build this automation
+   - "estimatedTimeSavedPerTicket": number — minutes saved per occurrence once automated
 
 10. sentiment: object with:
    - level: "frustrated" | "angry" | "urgent" | "anxious" | "neutral" | "patient" | "appreciative" — the CLIENT's emotional tone based on their language
@@ -122,6 +133,9 @@ async function analyzeBatch(anthropic, tickets) {
     description: t.description || '',
     resolution: t.resolution || '',
     priority: t.priority || null,
+    issueType: t.issueTypeName || null,
+    subIssueType: t.subIssueTypeName || null,
+    usedPIA: t.usedPIA || false,
   }));
 
   const userMessage = `Analyze these ${tickets.length} IT support tickets:\n\n${JSON.stringify(ticketData, null, 2)}`;
@@ -159,6 +173,7 @@ async function analyzeBatch(anthropic, tickets) {
         aiReasoning: ai.reasoning || '',
         aiSentiment: ai.sentiment || null,
         aiQuickHitter: ai.quickHitter || null,
+        aiAutomationSuggestion: ai.automationSuggestion || null,
       };
     });
   } catch (parseErr) {
@@ -247,6 +262,7 @@ function mergeAIResults(analyzedTickets, aiResults) {
         reasoning: ai.aiReasoning,
         sentiment: ai.aiSentiment,
         quickHitter: ai.aiQuickHitter,
+        automationSuggestion: ai.aiAutomationSuggestion,
         categoryChanged,
         originalCategory: categoryChanged ? ticket.categoryLabel : null,
       },
@@ -276,9 +292,11 @@ function withTimeout(promise, ms, label) {
  */
 function buildInsightsSummary(analyzedTickets) {
   const categoryCount = {};
+  const issueTypeCount = {};
   const priorityCount = {};
   let totalAutoScore = 0;
   let escalationCount = 0;
+  let piaUsedCount = 0;
   const descriptions = [];
 
   // Time-of-day and day-of-week distributions
@@ -294,11 +312,20 @@ function buildInsightsSummary(analyzedTickets) {
     const cat = t.aiInsights?.categoryLabel || t.categoryLabel || 'Unknown';
     categoryCount[cat] = (categoryCount[cat] || 0) + 1;
 
+    // Track Autotask issue type / sub-issue type distribution
+    const itName = t.issueTypeName || null;
+    const sitName = t.subIssueTypeName || null;
+    if (itName) {
+      const itLabel = sitName ? `${itName} / ${sitName}` : itName;
+      issueTypeCount[itLabel] = (issueTypeCount[itLabel] || 0) + 1;
+    }
+
     const pri = t.priority || 'Unknown';
     priorityCount[pri] = (priorityCount[pri] || 0) + 1;
 
     totalAutoScore += t.automationScore || 0;
     if (t.aiInsights?.escalation) escalationCount++;
+    if (t.usedPIA) piaUsedCount++;
 
     // Compute time distributions from createDate
     if (t.createDate) {
@@ -321,12 +348,15 @@ function buildInsightsSummary(analyzedTickets) {
       id: t.ticketNumber || t.ticketId,
       title: t.title || '',
       category: cat,
+      issueType: itName || null,
+      subIssueType: sitName || null,
       priority: pri,
       automationScore: t.automationScore,
       rootCause: t.aiInsights?.rootCause || '',
       escalation: t.aiInsights?.escalation || false,
       createDate: t.createDate || null,
       companyName: companyName,
+      usedPIA: t.usedPIA || false,
     });
   }
 
@@ -357,7 +387,8 @@ function buildInsightsSummary(analyzedTickets) {
   }
 
   return {
-    categoryCount, priorityCount, avgAutoScore, escalationCount, descriptions,
+    categoryCount, issueTypeCount, priorityCount, avgAutoScore, escalationCount, piaUsedCount,
+    descriptions,
     hourlyDistribution: hourlyBreakdown,
     dayOfWeekDistribution,
     topClients,
@@ -402,20 +433,27 @@ Respond with a JSON object (no markdown wrapping) containing:
    - "improvements": Array of 3-5 objects with { "area": string, "finding": string, "recommendation": string, "impact": "high" | "medium" | "low" }. Areas might include: response time, first-call resolution, staffing alignment, proactive monitoring, documentation, training gaps, SLA compliance, etc.
    - "strengths": Array of 1-3 strings highlighting what the team is doing well based on ticket data
 
-7. "automationOpportunities": An array of 2-4 objects, each with:
+7. "automationOpportunities": An array of 3-6 objects, each with:
    - "opportunity": Short title
-   - "description": How to implement this automation
+   - "description": How to implement this automation — be SPECIFIC. Name the tool (PIA, Datto RMM, Power Automate, self-service portal, Teams bot, etc.), the trigger event, and the exact actions. Example: "Create a Datto RMM component that runs reset-ad-password.ps1 automatically when triggered by a self-service portal form, sends confirmation via Teams, and auto-closes the ticket."
+   - "method": "pia_script" | "datto_rmm" | "power_automate" | "self_service" | "runbook" | "teams_bot" | "monitoring" — the primary automation approach
    - "estimatedTimeSaved": Estimated minutes saved per month
-   - "ticketTypes": Which ticket categories this would affect
+   - "estimatedSetupHours": Rough hours to build/configure this automation
+   - "ticketTypes": Which Autotask issue type / sub-issue types this would affect (use the ISSUE TYPE data provided)
+   - "currentVolume": How many tickets in this batch match this opportunity
+   - "piaCandidate": boolean — true if this is a good candidate for PIA automation specifically
 
-Be specific, data-driven, and practical. Reference actual ticket IDs and categories from the data. Don't be generic — tailor every insight to what you see in THIS specific batch.`;
+IMPORTANT: Use the AUTOTASK ISSUE TYPE / SUB-ISSUE TYPE DISTRIBUTION data (not just keyword categories) when identifying automation opportunities and referencing ticket types. The issue type/sub-issue type is the official Autotask classification and should be the primary reference. Also note which tickets were already resolved via PIA (usedPIA flag) — if PIA is already being used for certain ticket types, mention that and suggest expanding it.
+
+Be specific, data-driven, and practical. Reference actual ticket IDs, issue types, and categories from the data. Don't be generic — tailor every insight to what you see in THIS specific batch.`;
 
 /**
  * Analyze a single chunk of tickets for batch insights.
  */
 async function analyzeInsightsChunk(anthropic, chunkTickets, totalTicketCount, chunkIndex, totalChunks) {
   const {
-    categoryCount, priorityCount, avgAutoScore, escalationCount, descriptions,
+    categoryCount, issueTypeCount, priorityCount, avgAutoScore, escalationCount, piaUsedCount,
+    descriptions,
     hourlyDistribution, dayOfWeekDistribution, topClients,
   } = buildInsightsSummary(chunkTickets);
 
@@ -429,6 +467,10 @@ async function analyzeInsightsChunk(anthropic, chunkTickets, totalTicketCount, c
       ).join('\n')}\n`
     : '';
 
+  const issueTypeSection = Object.keys(issueTypeCount).length > 0
+    ? `\nAUTOTASK ISSUE TYPE / SUB-ISSUE TYPE DISTRIBUTION:\n${JSON.stringify(issueTypeCount)}\n`
+    : '';
+
   const userMessage = `Analyze this batch of ${chunkTickets.length} MSP tickets for cross-cutting patterns and strategic insights.
 
 BATCH SUMMARY:
@@ -437,14 +479,15 @@ BATCH SUMMARY:
 - Priority distribution: ${JSON.stringify(priorityCount)}
 - Average automation score: ${avgAutoScore}%
 - Escalation flags: ${escalationCount}
-
+- Tickets resolved via PIA/automation: ${piaUsedCount}
+${issueTypeSection}
 HOURLY DISTRIBUTION (tickets created by hour of day):
 ${JSON.stringify(hourlyDistribution)}
 
 DAY-OF-WEEK DISTRIBUTION:
 ${JSON.stringify(dayOfWeekDistribution)}
 ${topClientsSection}
-INDIVIDUAL TICKETS:
+INDIVIDUAL TICKETS (each includes issueType, subIssueType from Autotask, and usedPIA flag):
 ${JSON.stringify(descriptions, null, 2)}${chunkLabel}`;
 
   const response = await withTimeout(
