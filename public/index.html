@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=26">
+  <link rel="stylesheet" href="style.css?v=27">
 </head>
 <body>
   <header>
@@ -522,6 +522,27 @@
               <span id="din-selected-count" class="qh-selected-label"></span>
             </div>
           </div>
+          <div class="panel-card" id="din-correlation-panel">
+            <h3>Do It Now — Time Range Correlation</h3>
+            <p class="panel-desc">How Do It Now tickets break down by estimated time range, completion status, and PIA automation usage</p>
+            <table class="data-table" id="din-correlation-table">
+              <thead>
+                <tr>
+                  <th>Est. Time Range</th>
+                  <th>Completed</th>
+                  <th>Completed w/ PIA</th>
+                  <th>Open</th>
+                  <th>Open w/ PIA</th>
+                  <th>Total</th>
+                  <th>Completion %</th>
+                  <th>PIA %</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+              <tfoot></tfoot>
+            </table>
+            <div id="din-correlation-detail"></div>
+          </div>
         </div>
 
         <!-- Sub-tab: Tickets -->
@@ -603,6 +624,6 @@
     <span class="footer-ai">AI-Powered</span>
   </footer>
 
-  <script src="app.js?v=26"></script>
+  <script src="app.js?v=27"></script>
 </body>
 </html>

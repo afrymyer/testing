@@ -1491,6 +1491,132 @@ function renderDoItNow(dinAnalysis) {
   // Set priority button
   const dinBtn = $('#din-set-priority-btn');
   dinBtn.onclick = () => dinUpdatePriority(predTbody, dinAnalysis.doItNowPriorityValue, dinAnalysis.doItNowLabel);
+
+  // Correlation table
+  renderDoItNowCorrelation(dinAnalysis.correlation);
+}
+
+function renderDoItNowCorrelation(corr) {
+  const tbody = document.querySelector('#din-correlation-table tbody');
+  const tfoot = document.querySelector('#din-correlation-table tfoot');
+  const detail = document.getElementById('din-correlation-detail');
+  if (!tbody || !corr) return;
+
+  tbody.innerHTML = '';
+  tfoot.innerHTML = '';
+
+  const buckets = corr.buckets || [];
+  if (buckets.length === 0 || corr.totalDIN === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" class="empty-state-text">No Do It Now tickets to correlate</td></tr>';
+    if (detail) detail.innerHTML = '';
+    return;
+  }
+
+  // Totals for the footer
+  let totCompleted = 0, totCompletedPIA = 0, totOpen = 0, totOpenPIA = 0;
+
+  for (const b of buckets) {
+    const total = b.completed + b.open;
+    if (total === 0) continue;
+    const completionPct = total > 0 ? Math.round((b.completed / total) * 100) : 0;
+    const piaPct = total > 0 ? Math.round(((b.completedPIA + b.openPIA) / total) * 100) : 0;
+
+    totCompleted += b.completed;
+    totCompletedPIA += b.completedPIA;
+    totOpen += b.open;
+    totOpenPIA += b.openPIA;
+
+    const completionClass = completionPct >= 75 ? 'qh-cell-good' : completionPct >= 40 ? 'qh-cell-warn' : 'qh-cell-bad';
+    const piaClass = piaPct >= 50 ? 'qh-cell-good' : piaPct >= 20 ? 'qh-cell-warn' : '';
+
+    tbody.innerHTML += `
+      <tr class="din-corr-row" data-bucket="${escHtml(b.range)}" style="cursor:pointer" title="Click to see tickets">
+        <td><strong>${escHtml(b.range)}</strong></td>
+        <td>${b.completed}</td>
+        <td>${b.completedPIA > 0 ? `<span class="badge badge-pia-sm">${b.completedPIA}</span>` : '0'}</td>
+        <td>${b.open > 0 ? `<span class="din-open-count">${b.open}</span>` : '0'}</td>
+        <td>${b.openPIA > 0 ? `<span class="badge badge-pia-sm">${b.openPIA}</span>` : '0'}</td>
+        <td>${total}</td>
+        <td><span class="${completionClass}">${completionPct}%</span></td>
+        <td><span class="${piaClass}">${piaPct}%</span></td>
+      </tr>`;
+  }
+
+  // Footer totals
+  const grandTotal = totCompleted + totOpen;
+  const grandCompPct = grandTotal > 0 ? Math.round((totCompleted / grandTotal) * 100) : 0;
+  const grandPiaPct = grandTotal > 0 ? Math.round(((totCompletedPIA + totOpenPIA) / grandTotal) * 100) : 0;
+  tfoot.innerHTML = `
+    <tr class="din-corr-footer">
+      <td><strong>Totals</strong></td>
+      <td><strong>${totCompleted}</strong></td>
+      <td><strong>${totCompletedPIA}</strong></td>
+      <td><strong>${totOpen}</strong></td>
+      <td><strong>${totOpenPIA}</strong></td>
+      <td><strong>${grandTotal}</strong></td>
+      <td><strong>${grandCompPct}%</strong></td>
+      <td><strong>${grandPiaPct}%</strong></td>
+    </tr>`;
+
+  // Click row to expand ticket detail
+  tbody.querySelectorAll('.din-corr-row').forEach(row => {
+    row.addEventListener('click', () => {
+      const bucket = row.dataset.bucket;
+      const tickets = (corr.tickets || []).filter(t => t.timeBucket === bucket);
+      renderCorrelationDrilldown(detail, bucket, tickets);
+    });
+  });
+}
+
+function renderCorrelationDrilldown(container, bucket, tickets) {
+  if (!container) return;
+  if (tickets.length === 0) {
+    container.innerHTML = `<p class="empty-state-text">No tickets in ${escHtml(bucket)}</p>`;
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="din-corr-drilldown">
+      <h4>${escHtml(bucket)} — ${tickets.length} Ticket${tickets.length !== 1 ? 's' : ''}</h4>
+      <table class="data-table din-corr-detail-table">
+        <thead>
+          <tr>
+            <th>Ticket #</th>
+            <th>Title</th>
+            <th>Client</th>
+            <th>Issue Type</th>
+            <th>Est. Min</th>
+            <th>Worked Hrs</th>
+            <th>Status</th>
+            <th>PIA</th>
+            <th>Auto Score</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tickets.map(t => {
+            const statusBadge = t.isCompleted
+              ? '<span class="badge badge-accurate">Completed</span>'
+              : '<span class="badge badge-inaccurate">Open</span>';
+            const piaBadge = t.usedPIA
+              ? '<span class="badge badge-pia-sm">PIA</span>'
+              : '<span class="din-no-pia">—</span>';
+            const scoreClass = t.automationScore >= 80 ? 'qh-cell-good' : t.automationScore >= 50 ? 'qh-cell-warn' : '';
+            return `
+            <tr onclick="openTicketDetail('${t.ticketId}')" style="cursor:pointer">
+              <td>#${t.ticketNumber || t.ticketId}</td>
+              <td title="${escHtml(t.title)}">${escHtml((t.title || '').slice(0, 45))}${(t.title || '').length > 45 ? '...' : ''}</td>
+              <td>${escHtml(t.companyName)}</td>
+              <td>${escHtml(t.issueType)}</td>
+              <td>${t.estimatedMinutes}</td>
+              <td>${t.workedHours > 0 ? t.workedHours.toFixed(1) : '<span class="din-open-count">0</span>'}</td>
+              <td>${statusBadge}</td>
+              <td>${piaBadge}</td>
+              <td><span class="${scoreClass}">${t.automationScore}%</span></td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>`;
 }
 
 function updateDINSelectedCount() {

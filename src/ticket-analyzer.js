@@ -1126,6 +1126,62 @@ function getDeepAnalytics(analyzedTickets, rawTickets = [], options = {}) {
     .sort((a, b) => b.predictionScore - a.predictionScore)
     .slice(0, 20);
 
+  // Do It Now Correlation: time range x status x PIA
+  const dinTickets = analyzedTickets.filter(t => doItNowPriorityValues.has(t.priority));
+  const timeBuckets = ['0-5 min', '5-10 min', '10-20 min', '20-30 min', '30-60 min', '60+ min'];
+  function getTimeBucket(mins) {
+    if (mins <= 5) return '0-5 min';
+    if (mins <= 10) return '5-10 min';
+    if (mins <= 20) return '10-20 min';
+    if (mins <= 30) return '20-30 min';
+    if (mins <= 60) return '30-60 min';
+    return '60+ min';
+  }
+
+  const correlationMap = {};
+  for (const bucket of timeBuckets) {
+    correlationMap[bucket] = {
+      completed: { total: 0, withPIA: 0 },
+      open: { total: 0, withPIA: 0 },
+    };
+  }
+
+  const correlationTickets = [];
+  for (const t of dinTickets) {
+    const bucket = getTimeBucket(t.estimatedMinutes || 0);
+    const isCompleted = t.status === 5 || t.status === 'Complete';
+    const statusKey = isCompleted ? 'completed' : 'open';
+    correlationMap[bucket][statusKey].total++;
+    if (t.usedPIA) correlationMap[bucket][statusKey].withPIA++;
+    correlationTickets.push({
+      ticketId: t.ticketId,
+      ticketNumber: t.ticketNumber,
+      title: t.title,
+      companyName: t.companyName || '',
+      estimatedMinutes: t.estimatedMinutes || 0,
+      timeBucket: bucket,
+      isCompleted,
+      workedHours: t.workedHours || 0,
+      usedPIA: t.usedPIA,
+      automationScore: t.automationScore,
+      issueType: t.issueTypeName
+        ? (t.subIssueTypeName ? `${t.issueTypeName} / ${t.subIssueTypeName}` : t.issueTypeName)
+        : (t.categoryLabel || ''),
+    });
+  }
+
+  const dinCorrelation = {
+    buckets: timeBuckets.map(bucket => ({
+      range: bucket,
+      completed: correlationMap[bucket].completed.total,
+      completedPIA: correlationMap[bucket].completed.withPIA,
+      open: correlationMap[bucket].open.total,
+      openPIA: correlationMap[bucket].open.withPIA,
+    })),
+    tickets: correlationTickets.sort((a, b) => a.estimatedMinutes - b.estimatedMinutes),
+    totalDIN: dinTickets.length,
+  };
+
   const doItNowAnalysis = {
     doItNowLabel,
     doItNowPriorityValue,
@@ -1134,6 +1190,7 @@ function getDeepAnalytics(analyzedTickets, rawTickets = [], options = {}) {
     totalTickets: analyzedTickets.length,
     byIssueType: doItNowByIssueType,
     predictions: doItNowPredictions,
+    correlation: dinCorrelation,
   };
 
   // ── Overview Charts ──
