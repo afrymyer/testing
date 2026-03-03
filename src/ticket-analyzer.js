@@ -1199,7 +1199,7 @@ function getDeepAnalytics(analyzedTickets, rawTickets = [], options = {}) {
   const clientVolume = {};
   for (const t of analyzedTickets) {
     const name = t.companyName;
-    if (!name || name === 'Unknown') continue;
+    if (!name || /^unknown$/i.test(name)) continue;
     clientVolume[name] = (clientVolume[name] || 0) + 1;
   }
   const ticketsByClient = Object.entries(clientVolume)
