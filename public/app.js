@@ -544,13 +544,7 @@ function renderAnalytics(analytics, summary) {
   const hasIssueTypes = summary.issueTypeBreakdown && Object.keys(summary.issueTypeBreakdown).length > 0;
   renderCategoryBars(hasIssueTypes ? summary.issueTypeBreakdown : summary.categoryBreakdown, hasIssueTypes);
 
-  // Issue Type / Category detail table
-  renderCategoryTable(
-    hasIssueTypes && analytics.issueTypeDeepBreakdown?.length > 0
-      ? analytics.issueTypeDeepBreakdown
-      : analytics.categoryDeepBreakdown,
-    hasIssueTypes
-  );
+
 
   // Priority bars
   renderPriorityBars(analytics.priorityBreakdown);
@@ -601,32 +595,6 @@ function renderCategoryBars(breakdown, isIssueType) {
         <span class="cat-bar-count">${count}</span>
       </div>`;
   });
-}
-
-function renderCategoryTable(deepBreakdown, isIssueType) {
-  const tbody = $('#category-detail-table tbody');
-  tbody.innerHTML = '';
-
-  // Update header label
-  const th = $('#category-detail-table thead th:first-child');
-  if (th) th.textContent = isIssueType ? 'Issue Type / Sub-Issue' : 'Category';
-
-  // Also update the card heading
-  const heading = $('#category-detail-table').closest('.panel-card')?.querySelector('h3');
-  if (heading) heading.textContent = isIssueType ? 'Top 15 Issue Type Details' : 'Category Details';
-
-  for (const row of deepBreakdown.slice(0, 15)) {
-    const label = row.issueType || row.category;
-    tbody.innerHTML += `
-      <tr>
-        <td>${escHtml(label)}</td>
-        <td>${row.count}</td>
-        <td>${row.pctOfTotal}%</td>
-        <td>${row.avgAutomationScore}%</td>
-        <td>${row.totalMinutesSaveable}</td>
-        <td>${row.quickHitters}</td>
-      </tr>`;
-  }
 }
 
 function renderPriorityBars(priorityBreakdown) {
@@ -1103,7 +1071,6 @@ function renderOverviewCharts(charts) {
   renderHorizontalBars('day-of-week-bars', charts.ticketsByDayOfWeek, 'day', 'count');
   renderHeatmap('hour-of-day-bars', charts.ticketsByHourOfDay, 'hour', 'count');
   renderHorizontalBars('ticket-age-bars', charts.ticketAgeDistribution, 'bucket', 'count');
-  renderHorizontalBars('auto-score-bars', charts.automationScoreDistribution, 'range', 'count');
   renderDonut('qh-split-donut', [
     { label: 'Quick Hitters', value: charts.quickHitterSplit.quickHitters, color: '#7ac143' },
     { label: 'Long-Running', value: charts.quickHitterSplit.longRunning, color: '#3786de' },

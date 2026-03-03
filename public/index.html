@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=30">
+  <link rel="stylesheet" href="style.css?v=31">
 </head>
 <body>
   <header>
@@ -169,6 +169,12 @@
           <p class="chart-note" id="trend-note"></p>
         </div>
 
+        <div class="panel-card">
+          <h3>Tickets by Hour of Day</h3>
+          <p class="panel-desc">What time of day are tickets being created?</p>
+          <div id="hour-of-day-bars"></div>
+        </div>
+
         <!-- Row: Client Volume + Avg Resolution by Priority -->
         <div class="overview-grid">
           <div class="panel-card">
@@ -197,19 +203,8 @@
           </div>
         </div>
 
-        <div class="panel-card">
-          <h3>Tickets by Hour of Day</h3>
-          <p class="panel-desc">What time of day are tickets being created?</p>
-          <div id="hour-of-day-bars"></div>
-        </div>
-
-        <!-- Row: Automation Score Distribution + Donut Charts -->
-        <div class="overview-grid overview-grid-4">
-          <div class="panel-card">
-            <h3>Automation Score Distribution</h3>
-            <p class="panel-desc">Breakdown of tickets by automation potential</p>
-            <div id="auto-score-bars"></div>
-          </div>
+        <!-- Row: Donut Charts -->
+        <div class="overview-grid overview-grid-3">
           <div class="panel-card">
             <h3>Quick Hitter vs Long-Running</h3>
             <p class="panel-desc">Split of 5-20 min fixes vs longer tickets</p>
@@ -227,22 +222,6 @@
           </div>
         </div>
 
-        <div class="panel-card">
-          <h3>Top 15 Issue Type Details</h3>
-          <table class="data-table" id="category-detail-table">
-            <thead>
-              <tr>
-                <th>Issue Type / Sub-Issue</th>
-                <th>Count</th>
-                <th>% of Total</th>
-                <th>Avg Auto Score</th>
-                <th>Total Min Saveable</th>
-                <th>Quick Hitters</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        </div>
       </div>
 
       <!-- Tab: Clients -->
@@ -612,6 +591,6 @@
     <span class="footer-ai">AI-Powered</span>
   </footer>
 
-  <script src="app.js?v=30"></script>
+  <script src="app.js?v=31"></script>
 </body>
 </html>
