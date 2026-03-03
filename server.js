@@ -237,6 +237,14 @@ app.get('/api/tickets', async (req, res) => {
     const summary = getSummary(categorized);
     const analytics = getDeepAnalytics(categorized, filteredTickets, { priorityMap });
 
+    // Compute zero-hours chart from unfiltered data so it isn't affected by excludeZeroHours filter
+    if (excludeZeroHours && analytics.overviewCharts) {
+      const allCompleted = enrichedTickets.filter(t => t.status === 5 || t.status === 'Complete');
+      const zeroCount = allCompleted.filter(t => !t.workedHours || t.workedHours === 0).length;
+      const hasCount = allCompleted.length - zeroCount;
+      analytics.overviewCharts.zeroHoursCompleted = { zeroHours: zeroCount, hasHours: hasCount, total: allCompleted.length };
+    }
+
     res.json({ tickets: analyzed, summary, analytics, queueDiagnostics: queueDist, priorityMap, issueTypeMap, subIssueTypeMap });
   } catch (err) {
     console.error('Failed to fetch tickets:', err.message);
