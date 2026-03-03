@@ -1067,6 +1067,7 @@ function renderQHTicketRows(tbody, tickets, filterVal) {
 function renderOverviewCharts(charts) {
   if (!charts) return;
   renderHorizontalBars('client-volume-bars', charts.ticketsByClient, 'client', 'count');
+  renderHorizontalBars('noisy-clients-bars', charts.ticketsByClient.slice(0, 10), 'client', 'count');
   renderHorizontalBars('resolution-by-priority-bars', charts.avgResolutionByPriority, 'priority', 'avgMinutes', 'min');
   renderHorizontalBars('day-of-week-bars', charts.ticketsByDayOfWeek, 'day', 'count');
   renderHeatmap('hour-of-day-bars', charts.ticketsByHourOfDay, 'hour', 'count');
