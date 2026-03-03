@@ -1288,7 +1288,95 @@ function renderQHValidation(qhValidation) {
 
   // Filter handler
   const filter = $('#qh-status-filter');
-  filter.onchange = () => renderQHTicketRows(tktTbody, v.tickets, filter.value);
+  filter.onchange = () => {
+    renderQHTicketRows(tktTbody, v.tickets, filter.value);
+    updateQHSelectedCount();
+  };
+
+  // Populate priority dropdown from the live Autotask map
+  const prioritySelect = $('#qh-priority-select');
+  prioritySelect.innerHTML = '<option value="">Set Priority To...</option>';
+  for (const [val, label] of Object.entries(currentPriorityMap)) {
+    prioritySelect.innerHTML += `<option value="${val}">${escHtml(label)}</option>`;
+  }
+
+  // Select-all checkbox
+  const checkAll = $('#qh-check-all');
+  checkAll.onchange = () => {
+    tktTbody.querySelectorAll('.qh-row-check').forEach(cb => { cb.checked = checkAll.checked; });
+    updateQHSelectedCount();
+  };
+
+  // "Select All Accurate" button
+  $('#qh-select-all-accurate').onclick = () => {
+    tktTbody.querySelectorAll('.qh-row-check').forEach(cb => { cb.checked = false; });
+    tktTbody.querySelectorAll('tr.qh-row-accurate .qh-row-check').forEach(cb => { cb.checked = true; });
+    updateQHSelectedCount();
+  };
+
+  // Update selected count on any checkbox change
+  tktTbody.addEventListener('change', (e) => {
+    if (e.target.classList.contains('qh-row-check')) updateQHSelectedCount();
+  });
+
+  // Enable/disable the update button based on selections + priority choice
+  prioritySelect.onchange = updateQHSelectedCount;
+
+  // The update button
+  $('#qh-set-priority-btn').onclick = () => qhUpdatePriority(tktTbody);
+}
+
+function updateQHSelectedCount() {
+  const checked = document.querySelectorAll('#qh-ticket-table tbody .qh-row-check:checked');
+  const label = $('#qh-selected-count');
+  const btn = $('#qh-set-priority-btn');
+  const priorityVal = $('#qh-priority-select').value;
+  label.textContent = checked.length > 0 ? `${checked.length} selected` : '';
+  btn.disabled = !(checked.length > 0 && priorityVal);
+}
+
+async function qhUpdatePriority(tbody) {
+  const priorityVal = parseInt($('#qh-priority-select').value);
+  if (!priorityVal) return;
+
+  const checked = tbody.querySelectorAll('.qh-row-check:checked');
+  const ticketIds = Array.from(checked).map(cb => Number(cb.dataset.ticketId)).filter(Boolean);
+  if (ticketIds.length === 0) return;
+
+  const priorityLabel = currentPriorityMap[priorityVal] || `Priority ${priorityVal}`;
+
+  const btn = $('#qh-set-priority-btn');
+  btn.disabled = true;
+  btn.textContent = `Updating ${ticketIds.length}...`;
+
+  try {
+    const resp = await fetch('/api/tickets/update-priority', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ticketIds, priority: priorityVal }),
+    });
+    const result = await resp.json();
+
+    if (!resp.ok) throw new Error(result.error || 'Update failed');
+
+    const msg = `Updated ${result.updated.length} ticket(s) to "${priorityLabel}"` +
+      (result.failed.length > 0 ? ` (${result.failed.length} failed)` : '');
+
+    // Flash success on updated rows
+    for (const id of result.updated) {
+      const row = tbody.querySelector(`tr[data-ticket-id="${id}"]`);
+      if (row) {
+        row.classList.add('qh-row-updated');
+        row.querySelector('.qh-row-check').checked = false;
+      }
+    }
+    updateQHSelectedCount();
+    btn.textContent = msg;
+    setTimeout(() => { btn.textContent = 'Update Selected'; }, 4000);
+  } catch (err) {
+    btn.textContent = `Error: ${err.message}`;
+    setTimeout(() => { btn.textContent = 'Update Selected'; btn.disabled = false; }, 4000);
+  }
 }
 
 function renderQHTicketRows(tbody, tickets, filterVal) {
@@ -1311,9 +1399,10 @@ function renderQHTicketRows(tbody, tickets, filterVal) {
       : '—';
 
     tbody.innerHTML += `
-      <tr class="qh-row-${t.status}" onclick="openTicketDetail('${t.ticketId}')" style="cursor:pointer">
-        <td>#${t.ticketNumber || t.ticketId}</td>
-        <td title="${escHtml(t.title)}">${escHtml((t.title || '').slice(0, 50))}${(t.title || '').length > 50 ? '…' : ''}</td>
+      <tr class="qh-row-${t.status}" data-ticket-id="${t.ticketId}">
+        <td class="qh-check-col" onclick="event.stopPropagation()"><input type="checkbox" class="qh-row-check" data-ticket-id="${t.ticketId}" /></td>
+        <td onclick="openTicketDetail('${t.ticketId}')" style="cursor:pointer">#${t.ticketNumber || t.ticketId}</td>
+        <td onclick="openTicketDetail('${t.ticketId}')" style="cursor:pointer" title="${escHtml(t.title)}">${escHtml((t.title || '').slice(0, 50))}${(t.title || '').length > 50 ? '...' : ''}</td>
         <td>${escHtml(t.companyName)}</td>
         <td>${escHtml(t.issueType)}</td>
         <td>${t.estimatedMinutes}m</td>

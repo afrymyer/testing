@@ -447,6 +447,40 @@ app.post('/api/ai-analyze', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/tickets/update-priority - Update priority on one or more tickets
+ * Expects { ticketIds: [number], priority: number }
+ * Used to set validated quick hitters to "do it now" priority.
+ */
+app.post('/api/tickets/update-priority', async (req, res) => {
+  if (!autotaskClient) {
+    return res.status(503).json({ error: 'Autotask not configured. Cannot update tickets in demo mode.' });
+  }
+
+  const { ticketIds, priority } = req.body;
+  if (!Array.isArray(ticketIds) || ticketIds.length === 0) {
+    return res.status(400).json({ error: 'ticketIds must be a non-empty array' });
+  }
+  if (priority == null || typeof priority !== 'number') {
+    return res.status(400).json({ error: 'priority must be a number' });
+  }
+
+  const results = { updated: [], failed: [] };
+
+  for (const ticketId of ticketIds) {
+    try {
+      await autotaskClient.updateTicket(ticketId, { priority });
+      results.updated.push(ticketId);
+    } catch (err) {
+      console.warn(`[API] Failed to update ticket ${ticketId} priority: ${err.message}`);
+      results.failed.push({ ticketId, error: err.message });
+    }
+  }
+
+  console.log(`[API] Priority update: ${results.updated.length} updated, ${results.failed.length} failed (priority=${priority})`);
+  res.json(results);
+});
+
 app.listen(PORT, () => {
   console.log(`IntermixIT Ticket Analyzer running on http://localhost:${PORT}`);
   console.log(`Autotask API: ${autotaskClient ? 'Configured' : 'Not configured (demo mode)'}`);

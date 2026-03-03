@@ -150,6 +150,16 @@ class AutotaskClient {
   }
 
   /**
+   * Update a ticket's fields via PATCH.
+   * @param {number} ticketId
+   * @param {object} fields - fields to update (e.g. { priority: 1 })
+   */
+  async updateTicket(ticketId, fields) {
+    const data = await this.request(`/Tickets`, 'PATCH', { id: ticketId, ...fields });
+    return data.item || data;
+  }
+
+  /**
    * Get ticket notes/comments for deeper analysis.
    */
   async getTicketNotes(ticketId) {

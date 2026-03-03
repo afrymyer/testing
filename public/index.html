@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=19">
+  <link rel="stylesheet" href="style.css?v=21">
 </head>
 <body>
   <header>
@@ -381,18 +381,33 @@
           <!-- Ticket-level detail -->
           <div class="panel-card" id="qh-ticket-detail">
             <h3>Ticket-Level Validation</h3>
-            <div class="qh-filter-bar">
-              <select id="qh-status-filter" class="input-field">
-                <option value="all">All Statuses</option>
-                <option value="accurate">Accurate Only</option>
-                <option value="underestimated">Underestimated Only</option>
-                <option value="no_data">No Time Data</option>
-                <option value="pia">Used PIA</option>
+            <div class="qh-action-bar">
+              <div class="qh-filter-bar">
+                <select id="qh-status-filter" class="input-field">
+                  <option value="all">All Statuses</option>
+                  <option value="accurate">Accurate Only</option>
+                  <option value="underestimated">Underestimated Only</option>
+                  <option value="no_data">No Time Data</option>
+                  <option value="pia">Used PIA</option>
               </select>
+              </div>
+              <div class="qh-priority-action">
+                <select id="qh-priority-select" class="input-field">
+                  <option value="">Set Priority To...</option>
+                </select>
+                <button id="qh-set-priority-btn" class="btn btn-accent btn-sm" disabled>
+                  Update Selected
+                </button>
+                <button id="qh-select-all-accurate" class="btn btn-outline btn-sm">
+                  Select All Accurate
+                </button>
+                <span id="qh-selected-count" class="qh-selected-label"></span>
+              </div>
             </div>
             <table class="data-table" id="qh-ticket-table">
               <thead>
                 <tr>
+                  <th class="qh-check-col"><input type="checkbox" id="qh-check-all" title="Select all visible" /></th>
                   <th>Ticket #</th>
                   <th>Title</th>
                   <th>Client</th>
@@ -488,6 +503,6 @@
     <span class="footer-ai">AI-Powered</span>
   </footer>
 
-  <script src="app.js?v=20"></script>
+  <script src="app.js?v=21"></script>
 </body>
 </html>
