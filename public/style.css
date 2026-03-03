@@ -3611,7 +3611,8 @@ tr.time-leak-moderate td:first-child { border-left: 3px solid rgba(122, 193, 67,
   color: var(--text);
 }
 
-/* === Do It Now Correlation === */
+/* === Do It Now Correlation & Issue Type Drill === */
+.din-issue-row:hover,
 .din-corr-row:hover {
   background: var(--surface-2);
 }

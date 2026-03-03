@@ -1441,7 +1441,7 @@ function renderDoItNow(dinAnalysis) {
   for (const row of dinAnalysis.byIssueType) {
     const rateClass = row.doItNowRate >= 50 ? 'qh-cell-bad' : row.doItNowRate >= 25 ? 'qh-cell-warn' : 'qh-cell-good';
     issueTbody.innerHTML += `
-      <tr>
+      <tr class="din-issue-row" data-issue-type="${escHtml(row.issueType)}" style="cursor:pointer" title="Click to see tickets">
         <td>${escHtml(row.issueType)}</td>
         <td>${row.total}</td>
         <td>${row.doItNowCount}</td>
@@ -1451,6 +1451,14 @@ function renderDoItNow(dinAnalysis) {
   if (dinAnalysis.byIssueType.length === 0) {
     issueTbody.innerHTML = '<tr><td colspan="4" class="empty-state-text">Not enough data to determine rates</td></tr>';
   }
+
+  // Click handler: drill into issue type tickets
+  issueTbody.querySelectorAll('.din-issue-row').forEach(row => {
+    row.addEventListener('click', () => {
+      const issueType = row.dataset.issueType;
+      drillIntoIssueType(issueType, dinAnalysis.doItNowPriorityValue);
+    });
+  });
 
   // --- Predictions Table ---
   predTbody.innerHTML = '';
@@ -1494,6 +1502,102 @@ function renderDoItNow(dinAnalysis) {
 
   // Correlation table
   renderDoItNowCorrelation(dinAnalysis.correlation);
+}
+
+function drillIntoIssueType(issueType, dinPriorityValue) {
+  // Match tickets by issue type label (same logic as ticket-analyzer.js)
+  const matched = allTickets.filter(t => {
+    const itLabel = t.issueTypeName
+      ? (t.subIssueTypeName ? `${t.issueTypeName} / ${t.subIssueTypeName}` : t.issueTypeName)
+      : (t.categoryLabel || 'Uncategorized');
+    return itLabel === issueType;
+  });
+
+  if (matched.length === 0) {
+    showToast(`No tickets found for "${issueType}"`);
+    return;
+  }
+
+  // Sort: Do It Now tickets first, then by status (open before closed), then by automation score
+  matched.sort((a, b) => {
+    const aIsDIN = a.priority === dinPriorityValue ? 1 : 0;
+    const bIsDIN = b.priority === dinPriorityValue ? 1 : 0;
+    if (bIsDIN !== aIsDIN) return bIsDIN - aIsDIN;
+    const aComplete = (a.status === 5 || a.status === 'Complete') ? 1 : 0;
+    const bComplete = (b.status === 5 || b.status === 'Complete') ? 1 : 0;
+    if (aComplete !== bComplete) return aComplete - bComplete;
+    return b.automationScore - a.automationScore;
+  });
+
+  const html = matched.map(t => {
+    const pLabel = currentPriorityMap[t.priority] || '';
+    const pClass = pLabel ? `badge-priority-${pLabel.toLowerCase().replace(/\s+/g, '-')}` : '';
+    const isComplete = t.status === 5 || t.status === 'Complete';
+    const statusBadge = isComplete
+      ? '<span class="badge badge-accurate">Completed</span>'
+      : '<span class="badge badge-inaccurate">Open</span>';
+    const piaBadge = t.usedPIA ? '<span class="badge badge-pia-sm">PIA</span>' : '';
+    const scoreClass = t.automationScore >= 80 ? 'high' : t.automationScore >= 50 ? 'medium' : 'low';
+    const worked = (t.workedHours || 0) > 0 ? `${t.workedHours.toFixed(1)}h worked` : 'No time logged';
+
+    return `
+      <div class="ticket-card" onclick="closeIssueDrill(); openTicketDetail('${t.ticketId}')" style="cursor:pointer;">
+        <div class="ticket-header">
+          <span class="ticket-title">${escHtml(t.title)}</span>
+          <span class="ticket-id">#${t.ticketNumber || t.ticketId}</span>
+        </div>
+        <div class="ticket-meta">
+          ${pLabel ? `<span class="badge ${pClass}">${pLabel}</span>` : ''}
+          ${statusBadge}
+          ${piaBadge}
+          ${t.isQuickHitter ? '<span class="badge badge-quick">Quick Hitter</span>' : ''}
+          ${t.estimatedMinutes ? `<span class="badge badge-time">~${t.estimatedMinutes} min</span>` : ''}
+          <span class="badge" style="background:var(--surface-2);color:var(--text-dim)">${worked}</span>
+          ${t.companyName ? `<span class="badge" style="background:var(--surface-2);color:var(--text-dim)">${escHtml(t.companyName)}</span>` : ''}
+          <div class="score-bar">
+            Auto:
+            <div class="score-track">
+              <div class="score-fill ${scoreClass}" style="width: ${t.automationScore}%"></div>
+            </div>
+            ${t.automationScore}%
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+
+  const dinCount = matched.filter(t => t.priority === dinPriorityValue).length;
+  const completedCount = matched.filter(t => t.status === 5 || t.status === 'Complete').length;
+  const piaCount = matched.filter(t => t.usedPIA).length;
+
+  const overlay = document.createElement('div');
+  overlay.id = 'issue-drill-overlay';
+  overlay.className = 'modal-overlay active';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width: 850px; max-height: 85vh; overflow-y: auto;">
+      <div class="modal-header">
+        <h2>${escHtml(issueType)}</h2>
+        <button class="modal-close" onclick="closeIssueDrill()">&times;</button>
+      </div>
+      <div style="padding: 0 20px 8px; display:flex; gap:0.6rem; flex-wrap:wrap;">
+        <span class="badge badge-category">${matched.length} tickets</span>
+        <span class="badge badge-priority-critical">${dinCount} Do It Now</span>
+        <span class="badge badge-accurate">${completedCount} completed</span>
+        <span class="badge badge-inaccurate">${matched.length - completedCount} open</span>
+        ${piaCount > 0 ? `<span class="badge badge-pia-sm">${piaCount} PIA</span>` : ''}
+      </div>
+      <div class="modal-body" style="padding: 12px 20px 20px;">
+        ${html}
+      </div>
+    </div>`;
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) closeIssueDrill();
+  });
+  document.body.appendChild(overlay);
+}
+
+function closeIssueDrill() {
+  const overlay = document.getElementById('issue-drill-overlay');
+  if (overlay) overlay.remove();
 }
 
 function renderDoItNowCorrelation(corr) {
