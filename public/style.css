@@ -3615,3 +3615,83 @@ tr.time-leak-moderate td:first-child { border-left: 3px solid rgba(122, 193, 67,
   text-align: center;
   padding: 1.5rem 0;
   font-size: 0.85rem;
+}
+
+/* === 3-column Overview Grid === */
+.overview-grid-3 {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
+/* === Donut Charts === */
+.donut-chart-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.donut-chart-container {
+  display: flex;
+  justify-content: center;
+  padding: 1rem 0;
+}
+.donut-ring {
+  width: 160px;
+  height: 160px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+.donut-hole {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: var(--card-bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.donut-total {
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: var(--text);
+  line-height: 1;
+}
+.donut-total-label {
+  font-size: 0.65rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.donut-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  align-items: center;
+  padding-top: 0.5rem;
+}
+.donut-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+.donut-legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+.donut-legend-count {
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* Responsive: stack 3-col to 1-col on small screens */
+@media (max-width: 900px) {
+  .overview-grid-3 {
+    grid-template-columns: 1fr;
+  }
+}

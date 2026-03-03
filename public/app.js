@@ -561,6 +561,9 @@ function renderAnalytics(analytics, summary) {
   // Trend chart
   renderTrendChart(analytics.trendData);
 
+  // Overview charts (client volume, day of week, age, auto score, donuts)
+  renderOverviewCharts(analytics.overviewCharts);
+
   // Top opportunities
   renderOpportunities(analytics.topOpportunities);
 
@@ -1416,6 +1419,93 @@ function renderQHTicketRows(tbody, tickets, filterVal) {
         <td>${verdictBadge}</td>
       </tr>`;
   }
+}
+
+// ── Overview Charts ──
+
+function renderOverviewCharts(charts) {
+  if (!charts) return;
+  renderHorizontalBars('client-volume-bars', charts.ticketsByClient, 'client', 'count');
+  renderHorizontalBars('resolution-by-priority-bars', charts.avgResolutionByPriority, 'priority', 'avgMinutes', 'min');
+  renderHorizontalBars('day-of-week-bars', charts.ticketsByDayOfWeek, 'day', 'count');
+  renderHorizontalBars('ticket-age-bars', charts.ticketAgeDistribution, 'bucket', 'count');
+  renderHorizontalBars('auto-score-bars', charts.automationScoreDistribution, 'range', 'count');
+  renderDonut('qh-split-donut', [
+    { label: 'Quick Hitters', value: charts.quickHitterSplit.quickHitters, color: '#7ac143' },
+    { label: 'Long-Running', value: charts.quickHitterSplit.longRunning, color: '#3786de' },
+  ]);
+  renderDonut('pia-coverage-donut', [
+    { label: 'PIA Automated', value: charts.piaCoverage.piaUsed, color: '#a78bfa' },
+    { label: 'Manual', value: charts.piaCoverage.manual, color: '#64748b' },
+  ]);
+}
+
+function renderHorizontalBars(containerId, data, labelKey, valueKey, suffix) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  el.innerHTML = '';
+
+  if (!data || data.length === 0) {
+    el.innerHTML = '<p class="empty-state-text">No data available</p>';
+    return;
+  }
+
+  const maxVal = Math.max(...data.map(d => d[valueKey]));
+  const colors = ['fill-primary', 'fill-green', 'fill-yellow', 'fill-orange', 'fill-purple', 'fill-cyan', 'fill-red'];
+  const sfx = suffix ? ` ${suffix}` : '';
+
+  data.forEach((d, i) => {
+    const pct = maxVal > 0 ? (d[valueKey] / maxVal) * 100 : 0;
+    const color = colors[i % colors.length];
+    el.innerHTML += `
+      <div class="cat-bar-row">
+        <span class="cat-bar-label">${escHtml(String(d[labelKey]))}</span>
+        <div class="cat-bar-track">
+          <div class="cat-bar-fill ${color}" style="width: ${pct}%"></div>
+        </div>
+        <span class="cat-bar-count">${d[valueKey]}${sfx}</span>
+      </div>`;
+  });
+}
+
+function renderDonut(containerId, segments) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+
+  const total = segments.reduce((s, seg) => s + seg.value, 0);
+  if (total === 0) {
+    el.innerHTML = '<p class="empty-state-text">No data</p>';
+    return;
+  }
+
+  // Build conic-gradient stops
+  let conicStops = [];
+  let cumPct = 0;
+  segments.forEach(seg => {
+    const pct = (seg.value / total) * 100;
+    conicStops.push(`${seg.color} ${cumPct}% ${cumPct + pct}%`);
+    cumPct += pct;
+  });
+
+  const legendHtml = segments.map(seg => {
+    const pct = ((seg.value / total) * 100).toFixed(1);
+    return `<div class="donut-legend-item">
+      <span class="donut-legend-swatch" style="background:${seg.color}"></span>
+      <span class="donut-legend-label">${escHtml(seg.label)}</span>
+      <span class="donut-legend-count">${seg.value} (${pct}%)</span>
+    </div>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div class="donut-chart-container">
+      <div class="donut-ring" style="background: conic-gradient(${conicStops.join(', ')});">
+        <div class="donut-hole">
+          <span class="donut-total">${total}</span>
+          <span class="donut-total-label">total</span>
+        </div>
+      </div>
+    </div>
+    <div class="donut-legend">${legendHtml}</div>`;
 }
 
 // ── Do It Now Analysis ──

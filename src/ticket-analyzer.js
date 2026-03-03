@@ -1128,6 +1128,96 @@ function getDeepAnalytics(analyzedTickets, rawTickets = [], options = {}) {
     predictions: doItNowPredictions,
   };
 
+  // ── Overview Charts ──
+
+  // 1. Ticket Volume by Client (top 15)
+  const clientVolume = {};
+  for (const t of analyzedTickets) {
+    const name = t.companyName || 'Unknown';
+    clientVolume[name] = (clientVolume[name] || 0) + 1;
+  }
+  const ticketsByClient = Object.entries(clientVolume)
+    .map(([client, count]) => ({ client, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 15);
+
+  // 2. Average Resolution Time by Priority
+  const priorityTimeStats = {};
+  for (const t of analyzedTickets) {
+    const pLabel = priorityMap[t.priority] || `P${t.priority}`;
+    if (!priorityTimeStats[pLabel]) priorityTimeStats[pLabel] = { total: 0, count: 0 };
+    const actualMin = (t.workedHours || 0) * 60;
+    if (actualMin > 0) {
+      priorityTimeStats[pLabel].total += actualMin;
+      priorityTimeStats[pLabel].count++;
+    }
+  }
+  const avgResolutionByPriority = Object.entries(priorityTimeStats)
+    .filter(([, s]) => s.count > 0)
+    .map(([priority, s]) => ({ priority, avgMinutes: Math.round(s.total / s.count), count: s.count }))
+    .sort((a, b) => a.avgMinutes - b.avgMinutes);
+
+  // 3. Tickets by Day of Week
+  const dayOfWeekCounts = [0, 0, 0, 0, 0, 0, 0]; // Sun-Sat
+  const dayLabels = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  for (const t of rawTickets) {
+    if (t.createDate) {
+      const dow = new Date(t.createDate).getDay();
+      dayOfWeekCounts[dow]++;
+    }
+  }
+  const ticketsByDayOfWeek = dayLabels.map((label, i) => ({ day: label, count: dayOfWeekCounts[i] }));
+
+  // 4. Ticket Age Distribution (open tickets)
+  const now = new Date();
+  const ageBuckets = { '< 1 day': 0, '1-3 days': 0, '3-7 days': 0, '7-14 days': 0, '14-30 days': 0, '30+ days': 0 };
+  for (const t of rawTickets) {
+    // Only count non-completed tickets, or all if we have no status info
+    const isOpen = !t.status || (t.status !== 5 && t.status !== 'Complete');
+    if (isOpen && t.createDate) {
+      const ageDays = (now - new Date(t.createDate)) / (1000 * 60 * 60 * 24);
+      if (ageDays < 1) ageBuckets['< 1 day']++;
+      else if (ageDays < 3) ageBuckets['1-3 days']++;
+      else if (ageDays < 7) ageBuckets['3-7 days']++;
+      else if (ageDays < 14) ageBuckets['7-14 days']++;
+      else if (ageDays < 30) ageBuckets['14-30 days']++;
+      else ageBuckets['30+ days']++;
+    }
+  }
+  const ticketAgeDistribution = Object.entries(ageBuckets).map(([bucket, count]) => ({ bucket, count }));
+
+  // 5. Automation Score Distribution
+  const autoScoreBuckets = { '0-19': 0, '20-39': 0, '40-59': 0, '60-79': 0, '80-100': 0 };
+  for (const t of analyzedTickets) {
+    const s = t.automationScore || 0;
+    if (s < 20) autoScoreBuckets['0-19']++;
+    else if (s < 40) autoScoreBuckets['20-39']++;
+    else if (s < 60) autoScoreBuckets['40-59']++;
+    else if (s < 80) autoScoreBuckets['60-79']++;
+    else autoScoreBuckets['80-100']++;
+  }
+  const automationScoreDistribution = Object.entries(autoScoreBuckets).map(([range, count]) => ({ range, count }));
+
+  // 6. Quick Hitter vs Long-Running Split
+  const quickCount = analyzedTickets.filter(t => t.isQuickHitter).length;
+  const longCount = analyzedTickets.length - quickCount;
+  const quickHitterSplit = { quickHitters: quickCount, longRunning: longCount, total: analyzedTickets.length };
+
+  // 7. PIA Coverage
+  const piaUsedCount = analyzedTickets.filter(t => t.usedPIA).length;
+  const manualCount = analyzedTickets.length - piaUsedCount;
+  const piaCoverage = { piaUsed: piaUsedCount, manual: manualCount, total: analyzedTickets.length };
+
+  const overviewCharts = {
+    ticketsByClient,
+    avgResolutionByPriority,
+    ticketsByDayOfWeek,
+    ticketAgeDistribution,
+    automationScoreDistribution,
+    quickHitterSplit,
+    piaCoverage,
+  };
+
   return {
     priorityBreakdown,
     categoryDeepBreakdown,
@@ -1138,6 +1228,7 @@ function getDeepAnalytics(analyzedTickets, rawTickets = [], options = {}) {
     timeAnalysis,
     quickHitterValidation: qhValidation,
     doItNowAnalysis,
+    overviewCharts,
   };
 }
 
