@@ -174,7 +174,7 @@ app.get('/api/tickets', async (req, res) => {
 
         // PIA API account identifiers (configurable via env, comma-separated)
         // Can match by resource ID, resource name, or text in note body
-        const piaIdentifiers = (process.env.PIA_API_IDENTIFIERS || 'pia,api,automation')
+        const piaIdentifiers = (process.env.PIA_API_IDENTIFIERS || 'pia automated api')
           .split(',')
           .map(s => s.trim().toLowerCase())
           .filter(Boolean);
