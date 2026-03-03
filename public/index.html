@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=21">
+  <link rel="stylesheet" href="style.css?v=22">
 </head>
 <body>
   <header>
@@ -160,6 +160,57 @@
           <div class="panel-card overview-priorities">
             <h3>Priority Distribution</h3>
             <div id="priority-bars"></div>
+          </div>
+        </div>
+
+        <!-- Do It Now Analysis -->
+        <div class="overview-grid">
+          <div class="panel-card">
+            <h3>Do It Now — Priority Breakdown</h3>
+            <p class="panel-desc">Pie chart of ticket priority distribution across all tickets</p>
+            <div id="do-it-now-pie" class="din-pie-container"></div>
+            <div id="do-it-now-pie-legend" class="din-pie-legend"></div>
+          </div>
+          <div class="panel-card">
+            <h3>Do It Now — By Issue Type</h3>
+            <p class="panel-desc">Which issue types most often end up as highest priority?</p>
+            <table class="data-table" id="din-issue-type-table">
+              <thead>
+                <tr>
+                  <th>Issue Type</th>
+                  <th>Total</th>
+                  <th>Do It Now</th>
+                  <th>Rate</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel-card" id="din-predictions-panel">
+          <h3>Predicted Do It Now Candidates</h3>
+          <p class="panel-desc">Tickets not currently set to highest priority that historically match "do it now" patterns based on issue type, quick hitter status, and automation score</p>
+          <table class="data-table" id="din-predictions-table">
+            <thead>
+              <tr>
+                <th class="qh-check-col"><input type="checkbox" id="din-check-all" title="Select all" /></th>
+                <th>Ticket #</th>
+                <th>Title</th>
+                <th>Client</th>
+                <th>Issue Type</th>
+                <th>Current Priority</th>
+                <th>Prediction Score</th>
+                <th>Quick Hitter?</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+          <div class="qh-priority-action" id="din-action-bar" style="margin-top: 0.75rem;">
+            <button id="din-set-priority-btn" class="btn btn-accent btn-sm" disabled>
+              Set Selected to Do It Now
+            </button>
+            <span id="din-selected-count" class="qh-selected-label"></span>
           </div>
         </div>
 
@@ -503,6 +554,6 @@
     <span class="footer-ai">AI-Powered</span>
   </footer>
 
-  <script src="app.js?v=21"></script>
+  <script src="app.js?v=22"></script>
 </body>
 </html>

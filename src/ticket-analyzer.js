@@ -1032,6 +1032,101 @@ function getDeepAnalytics(analyzedTickets, rawTickets = [], options = {}) {
     ? Math.round((qhValidation.accurateCount / qhWithTime.length) * 100)
     : null;
 
+  // ── Do It Now Analysis ──
+  // Analyze priority distribution as a pie chart and predict which
+  // current tickets should be "do it now" based on issue type patterns.
+
+  // Find the highest-priority value (lowest numeric key = highest priority)
+  const priorityKeys = Object.keys(priorityMap).map(Number).sort((a, b) => a - b);
+  const doItNowPriorityValue = priorityKeys[0] || 1;
+  const doItNowLabel = priorityMap[doItNowPriorityValue] || 'Critical';
+
+  // Priority pie data (count per priority label)
+  const priorityPie = {};
+  for (const t of analyzedTickets) {
+    const pLabel = priorityMap[t.priority] || `Priority ${t.priority || 'None'}`;
+    priorityPie[pLabel] = (priorityPie[pLabel] || 0) + 1;
+  }
+
+  // Historical "do it now" pattern: which issue types are most often set to highest priority?
+  const issueTypePriorityStats = {};
+  for (const t of analyzedTickets) {
+    const itLabel = t.issueTypeName
+      ? (t.subIssueTypeName ? `${t.issueTypeName} / ${t.subIssueTypeName}` : t.issueTypeName)
+      : (t.categoryLabel || 'Uncategorized');
+
+    if (!issueTypePriorityStats[itLabel]) {
+      issueTypePriorityStats[itLabel] = { total: 0, doItNow: 0 };
+    }
+    issueTypePriorityStats[itLabel].total++;
+    if (t.priority === doItNowPriorityValue) {
+      issueTypePriorityStats[itLabel].doItNow++;
+    }
+  }
+
+  // Calculate "do it now rate" per issue type — what % of this issue type ended up as highest priority
+  const doItNowByIssueType = Object.entries(issueTypePriorityStats)
+    .filter(([, s]) => s.total >= 2) // only include types with enough data
+    .map(([label, s]) => ({
+      issueType: label,
+      total: s.total,
+      doItNowCount: s.doItNow,
+      doItNowRate: Math.round((s.doItNow / s.total) * 100),
+    }))
+    .sort((a, b) => b.doItNowRate - a.doItNowRate || b.doItNowCount - a.doItNowCount);
+
+  // Predict: which current NON-do-it-now tickets should probably be "do it now"
+  // based on their issue type historically having a high do-it-now rate + quick hitter status
+  const doItNowRateMap = {};
+  for (const entry of doItNowByIssueType) {
+    doItNowRateMap[entry.issueType] = entry.doItNowRate;
+  }
+
+  const doItNowPredictions = analyzedTickets
+    .filter(t => t.priority !== doItNowPriorityValue) // not already do-it-now
+    .map(t => {
+      const itLabel = t.issueTypeName
+        ? (t.subIssueTypeName ? `${t.issueTypeName} / ${t.subIssueTypeName}` : t.issueTypeName)
+        : (t.categoryLabel || 'Uncategorized');
+
+      const historicalRate = doItNowRateMap[itLabel] || 0;
+      const isQuickHitter = t.isQuickHitter;
+      const hasHighAutoScore = t.automationScore >= 70;
+
+      // Prediction score: weighted combination of historical rate + quick hitter + auto score
+      let score = historicalRate;
+      if (isQuickHitter) score += 20;
+      if (hasHighAutoScore) score += 10;
+      if (t.usedPIA) score += 5;
+
+      return {
+        ticketId: t.ticketId,
+        ticketNumber: t.ticketNumber,
+        title: t.title,
+        companyName: t.companyName || 'Unknown',
+        issueType: itLabel,
+        currentPriority: priorityMap[t.priority] || `P${t.priority}`,
+        predictionScore: Math.min(100, score),
+        historicalRate,
+        isQuickHitter,
+        estimatedMinutes: t.estimatedMinutes,
+        automationScore: t.automationScore,
+      };
+    })
+    .filter(t => t.predictionScore >= 30) // only show meaningful predictions
+    .sort((a, b) => b.predictionScore - a.predictionScore)
+    .slice(0, 20);
+
+  const doItNowAnalysis = {
+    doItNowLabel,
+    doItNowPriorityValue,
+    priorityPie,
+    totalDoItNow: analyzedTickets.filter(t => t.priority === doItNowPriorityValue).length,
+    totalTickets: analyzedTickets.length,
+    byIssueType: doItNowByIssueType,
+    predictions: doItNowPredictions,
+  };
+
   return {
     priorityBreakdown,
     categoryDeepBreakdown,
@@ -1041,6 +1136,7 @@ function getDeepAnalytics(analyzedTickets, rawTickets = [], options = {}) {
     roiProjection,
     timeAnalysis,
     quickHitterValidation: qhValidation,
+    doItNowAnalysis,
   };
 }
 

@@ -577,6 +577,9 @@ function renderAnalytics(analytics, summary) {
   // Quick Hitter Validation
   renderQHValidation(analytics.quickHitterValidation);
 
+  // Do It Now Analysis
+  renderDoItNow(analytics.doItNowAnalysis);
+
   // AI Insights tab (show placeholder if not yet analyzed)
   if (!aiAnalyzed) renderAIInsights(null);
 }
@@ -1411,6 +1414,151 @@ function renderQHTicketRows(tbody, tickets, filterVal) {
         <td>${piaBadge}</td>
         <td>${verdictBadge}</td>
       </tr>`;
+  }
+}
+
+// ── Do It Now Analysis ──
+function renderDoItNow(dinAnalysis) {
+  const pieEl = $('#do-it-now-pie');
+  const legendEl = $('#do-it-now-pie-legend');
+  const issueTbody = $('#din-issue-type-table tbody');
+  const predTbody = $('#din-predictions-table tbody');
+
+  if (!dinAnalysis || dinAnalysis.totalTickets === 0) {
+    pieEl.innerHTML = '<p class="empty-state-text">No ticket data available</p>';
+    legendEl.innerHTML = '';
+    issueTbody.innerHTML = '';
+    predTbody.innerHTML = '';
+    return;
+  }
+
+  // --- Pie Chart (CSS conic-gradient) ---
+  const pieColors = ['#328d46', '#3786de', '#db991a', '#fb923c', '#ef0b3c', '#a78bfa', '#b6d469', '#64748b'];
+  const pieEntries = Object.entries(dinAnalysis.priorityPie).sort((a, b) => b[1] - a[1]);
+  const total = pieEntries.reduce((sum, [, c]) => sum + c, 0);
+
+  let conicStops = [];
+  let cumPct = 0;
+  pieEntries.forEach(([label, count], i) => {
+    const pct = (count / total) * 100;
+    const color = pieColors[i % pieColors.length];
+    conicStops.push(`${color} ${cumPct}% ${cumPct + pct}%`);
+    cumPct += pct;
+  });
+
+  pieEl.innerHTML = `<div class="din-pie-circle" style="background: conic-gradient(${conicStops.join(', ')});"></div>`;
+
+  legendEl.innerHTML = pieEntries.map(([label, count], i) => {
+    const pct = ((count / total) * 100).toFixed(1);
+    const color = pieColors[i % pieColors.length];
+    const isDIN = label === dinAnalysis.doItNowLabel;
+    return `<div class="din-legend-item${isDIN ? ' din-legend-highlight' : ''}">
+      <span class="din-legend-swatch" style="background:${color}"></span>
+      <span class="din-legend-label">${escHtml(label)}</span>
+      <span class="din-legend-count">${count} (${pct}%)</span>
+    </div>`;
+  }).join('');
+
+  // --- Issue Type Do-It-Now Rate Table ---
+  issueTbody.innerHTML = '';
+  for (const row of dinAnalysis.byIssueType) {
+    const rateClass = row.doItNowRate >= 50 ? 'qh-cell-bad' : row.doItNowRate >= 25 ? 'qh-cell-warn' : 'qh-cell-good';
+    issueTbody.innerHTML += `
+      <tr>
+        <td>${escHtml(row.issueType)}</td>
+        <td>${row.total}</td>
+        <td>${row.doItNowCount}</td>
+        <td><span class="${rateClass}">${row.doItNowRate}%</span></td>
+      </tr>`;
+  }
+  if (dinAnalysis.byIssueType.length === 0) {
+    issueTbody.innerHTML = '<tr><td colspan="4" class="empty-state-text">Not enough data to determine rates</td></tr>';
+  }
+
+  // --- Predictions Table ---
+  predTbody.innerHTML = '';
+  const predictions = dinAnalysis.predictions || [];
+
+  if (predictions.length === 0) {
+    predTbody.innerHTML = '<tr><td colspan="8" class="empty-state-text">No strong predictions — tickets already correctly prioritized</td></tr>';
+    $('#din-set-priority-btn').disabled = true;
+  } else {
+    for (const p of predictions) {
+      const scoreClass = p.predictionScore >= 70 ? 'qh-cell-bad' : p.predictionScore >= 50 ? 'qh-cell-warn' : '';
+      predTbody.innerHTML += `
+        <tr data-ticket-id="${p.ticketId}">
+          <td class="qh-check-col" onclick="event.stopPropagation()"><input type="checkbox" class="din-row-check" data-ticket-id="${p.ticketId}" /></td>
+          <td onclick="openTicketDetail('${p.ticketId}')" style="cursor:pointer">#${p.ticketNumber || p.ticketId}</td>
+          <td onclick="openTicketDetail('${p.ticketId}')" style="cursor:pointer" title="${escHtml(p.title)}">${escHtml((p.title || '').slice(0, 50))}${(p.title || '').length > 50 ? '...' : ''}</td>
+          <td>${escHtml(p.companyName)}</td>
+          <td>${escHtml(p.issueType)}</td>
+          <td>${escHtml(p.currentPriority)}</td>
+          <td><span class="${scoreClass}">${p.predictionScore}</span></td>
+          <td>${p.isQuickHitter ? '<span class="badge badge-accurate">Yes</span>' : 'No'}</td>
+        </tr>`;
+    }
+  }
+
+  // Select-all checkbox
+  const dinCheckAll = $('#din-check-all');
+  dinCheckAll.onchange = () => {
+    predTbody.querySelectorAll('.din-row-check').forEach(cb => { cb.checked = dinCheckAll.checked; });
+    updateDINSelectedCount();
+  };
+
+  // Individual checkbox change
+  predTbody.addEventListener('change', (e) => {
+    if (e.target.classList.contains('din-row-check')) updateDINSelectedCount();
+  });
+
+  // Set priority button
+  const dinBtn = $('#din-set-priority-btn');
+  dinBtn.onclick = () => dinUpdatePriority(predTbody, dinAnalysis.doItNowPriorityValue, dinAnalysis.doItNowLabel);
+}
+
+function updateDINSelectedCount() {
+  const checked = document.querySelectorAll('#din-predictions-table tbody .din-row-check:checked');
+  const label = $('#din-selected-count');
+  const btn = $('#din-set-priority-btn');
+  label.textContent = checked.length > 0 ? `${checked.length} selected` : '';
+  btn.disabled = checked.length === 0;
+}
+
+async function dinUpdatePriority(tbody, priorityValue, priorityLabel) {
+  const checked = tbody.querySelectorAll('.din-row-check:checked');
+  const ticketIds = Array.from(checked).map(cb => Number(cb.dataset.ticketId)).filter(Boolean);
+  if (ticketIds.length === 0) return;
+
+  const btn = $('#din-set-priority-btn');
+  btn.disabled = true;
+  btn.textContent = `Updating ${ticketIds.length}...`;
+
+  try {
+    const resp = await fetch('/api/tickets/update-priority', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ticketIds, priority: priorityValue }),
+    });
+    const result = await resp.json();
+
+    if (!resp.ok) throw new Error(result.error || 'Update failed');
+
+    const msg = `Updated ${result.updated.length} ticket(s) to "${priorityLabel}"` +
+      (result.failed.length > 0 ? ` (${result.failed.length} failed)` : '');
+
+    for (const id of result.updated) {
+      const row = tbody.querySelector(`tr[data-ticket-id="${id}"]`);
+      if (row) {
+        row.classList.add('qh-row-updated');
+        row.querySelector('.din-row-check').checked = false;
+      }
+    }
+    updateDINSelectedCount();
+    btn.textContent = msg;
+    setTimeout(() => { btn.textContent = 'Set Selected to Do It Now'; }, 4000);
+  } catch (err) {
+    btn.textContent = `Error: ${err.message}`;
+    setTimeout(() => { btn.textContent = 'Set Selected to Do It Now'; btn.disabled = false; }, 4000);
   }
 }
 
