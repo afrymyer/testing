@@ -5,6 +5,11 @@ let currentScript = null;
 let allResources = []; // { id, name, email }
 let selectedTechnicians = []; // resource IDs
 let lastQueueDiagnostics = null; // server-side queue distribution data
+let aiEnabled = false; // whether AI is configured on the server
+let aiAnalyzed = false; // whether current tickets have been AI-analyzed
+let rawTicketsForAI = []; // raw ticket data needed for AI re-analysis
+let currentBatchInsights = null; // AI batch-level insights
+let currentPriorityMap = { 1: 'Critical', 2: 'High', 3: 'Medium', 4: 'Low' }; // dynamic priority map from Autotask
 
 // ── DOM Elements ──
 const $ = (sel) => document.querySelector(sel);
@@ -101,6 +106,11 @@ async function init() {
     const res = await fetch('/api/status');
     const data = await res.json();
 
+    if (data.aiConfigured) {
+      aiEnabled = true;
+      $('#btn-ai').classList.remove('hidden');
+    }
+
     if (data.autotaskConfigured) {
       statusBar.className = 'status-bar connected';
       statusText.textContent = 'Connected to IntermixIT Ticket Analyzer. Select filters and click "Fetch Tickets" to load and analyze.';
@@ -143,21 +153,29 @@ function isReactiveQueue(queueID) {
 async function loadQueues() {
   try {
     const res = await fetch('/api/queues');
-    if (!res.ok) return;
+    if (!res.ok) {
+      let errMsg = `HTTP ${res.status}`;
+      try { const d = await res.json(); errMsg = d.error || errMsg; } catch {}
+      console.error('[Queues] Failed to load:', errMsg);
+      const container = $('#queue-options');
+      container.innerHTML = `<div class="dropdown-error">Failed to load queues: ${escHtml(errMsg)}</div>`;
+      return;
+    }
     const queues = await res.json();
     allQueues = queues;
     const container = $('#queue-options');
 
     for (const q of queues) {
-      if (!q.isActive) continue;
       const label = document.createElement('label');
       label.className = 'multi-select-option';
       label.innerHTML = `<input type="checkbox" value="${q.value}" /> ${escHtml(q.label)}`;
       label.querySelector('input').addEventListener('change', updateQueueSelection);
       container.appendChild(label);
     }
-  } catch {
-    // Silently fail - queue selection stays at "All Queues"
+  } catch (err) {
+    console.error('[Queues] Failed to load:', err);
+    const container = $('#queue-options');
+    container.innerHTML = `<div class="dropdown-error">Failed to load queues: ${escHtml(err.message)}</div>`;
   }
 }
 
@@ -196,7 +214,14 @@ function setupQueueDropdown() {
 async function loadResources() {
   try {
     const res = await fetch('/api/resources');
-    if (!res.ok) return;
+    if (!res.ok) {
+      let errMsg = `HTTP ${res.status}`;
+      try { const d = await res.json(); errMsg = d.error || errMsg; } catch {}
+      console.error('[Resources] Failed to load:', errMsg);
+      const container = $('#tech-options');
+      container.innerHTML = `<div class="dropdown-error">Failed to load technicians: ${escHtml(errMsg)}</div>`;
+      return;
+    }
     allResources = await res.json();
     const container = $('#tech-options');
 
@@ -208,8 +233,10 @@ async function loadResources() {
       label.querySelector('input').addEventListener('change', updateTechSelection);
       container.appendChild(label);
     }
-  } catch {
-    // Silently fail - tech selection stays at "All Technicians"
+  } catch (err) {
+    console.error('[Resources] Failed to load:', err);
+    const container = $('#tech-options');
+    container.innerHTML = `<div class="dropdown-error">Failed to load technicians: ${escHtml(err.message)}</div>`;
   }
 }
 
@@ -271,13 +298,46 @@ async function fetchTickets() {
   try {
     const res = await fetch(`/api/tickets?${params}`);
     if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error);
+      let errMsg = `HTTP ${res.status}`;
+      let errBody = '';
+      try {
+        const errData = await res.json();
+        errMsg = errData.error || errMsg;
+      } catch {
+        errBody = await res.text().catch(() => '');
+        if (errBody) errMsg = errBody;
+      }
+      // Add troubleshooting hints based on status code
+      let hint = '';
+      if (res.status === 401) {
+        hint = '\n\nFix: Check AUTOTASK_API_USER, AUTOTASK_API_SECRET, and AUTOTASK_API_INTEGRATION_CODE in your .env file. Make sure the API user is active in Autotask.';
+      } else if (res.status === 403) {
+        hint = '\n\nFix: Your AUTOTASK_API_ZONE is wrong. It should be https://webservicesN.autotask.net (not https://wwN.autotask.net). Check your Autotask zone number.';
+      } else if (res.status === 503) {
+        hint = '\n\nFix: Autotask credentials are not configured. Create a .env file with your API credentials.';
+      }
+      throw new Error(errMsg + hint);
     }
     const data = await res.json();
     allTickets = data.tickets;
     currentAnalytics = data.analytics;
     lastQueueDiagnostics = data.queueDiagnostics || null;
+    if (data.priorityMap) currentPriorityMap = data.priorityMap;
+    aiAnalyzed = false;
+    // Store raw enriched tickets for potential AI re-analysis
+    rawTicketsForAI = data._rawTickets || allTickets.map(t => ({
+      id: t.ticketId, ticketNumber: t.ticketNumber, title: t.title,
+      description: t.description, resolution: t.resolution, status: t.status,
+      priority: t.priority, queueID: t.queueID, createDate: t.createDate,
+      assignedResourceID: t.assignedResourceID, workedHours: t.workedHours,
+      companyID: t.companyID, companyName: t.companyName,
+      issueType: t.issueType, subIssueType: t.subIssueType,
+      issueTypeName: t.issueTypeName, subIssueTypeName: t.subIssueTypeName,
+      usedPIA: t.usedPIA, piaIndicator: t.piaIndicator,
+      firstResponseDateTime: t.firstResponseDateTime,
+      resolutionPlanDateTime: t.resolutionPlanDateTime,
+      resolvedDateTime: t.resolvedDateTime,
+    }));
 
     renderSummary(data.summary);
     renderAnalytics(data.analytics, data.summary);
@@ -286,10 +346,21 @@ async function fetchTickets() {
     statusBar.className = 'status-bar connected';
     const queueLabel = selectedQueues.length > 0 ? ` in ${selectedQueues.length} queue${selectedQueues.length > 1 ? 's' : ''}` : '';
     const timeLabel = from ? ` (${from} to ${to})` : '';
-    statusText.textContent = `Loaded ${allTickets.length} tickets${queueLabel}${timeLabel}. ${data.summary.quickHitterCount} quick hitters found.`;
+    const aiHint = aiEnabled ? ' Click "AI Analyze" for deeper insights.' : '';
+    statusText.textContent = `Loaded ${allTickets.length} tickets${queueLabel}${timeLabel}. ${data.summary.quickHitterCount} quick hitters found.${aiHint}`;
   } catch (err) {
     statusBar.className = 'status-bar error';
-    statusText.textContent = `Error: ${err.message}`;
+    statusText.innerHTML = '';
+    // Show error in a detailed, visible way
+    const errEl = document.createElement('div');
+    errEl.className = 'error-detail';
+    errEl.innerHTML = `
+      <strong>Failed to fetch tickets</strong><br>
+      <span class="error-message">${escHtml(err.message).replace(/\n/g, '<br>')}</span>
+    `;
+    statusText.appendChild(errEl);
+    // Also log full details to browser console
+    console.error('[Fetch Error]', err);
   }
 }
 
@@ -305,16 +376,151 @@ async function loadDemo() {
     const data = await res.json();
     allTickets = data.tickets;
     currentAnalytics = data.analytics;
+    aiAnalyzed = false;
+    rawTicketsForAI = DEMO_TICKETS;
 
     renderSummary(data.summary);
     renderAnalytics(data.analytics, data.summary);
     applyFilters();
 
     statusBar.className = 'status-bar demo';
-    statusText.textContent = `Demo: ${allTickets.length} tickets analyzed. ${data.summary.quickHitterCount} quick hitters identified.`;
+    const aiHint = aiEnabled ? ' Click "AI Analyze" for deeper insights.' : '';
+    statusText.textContent = `Demo: ${allTickets.length} tickets analyzed. ${data.summary.quickHitterCount} quick hitters identified.${aiHint}`;
   } catch (err) {
     statusBar.className = 'status-bar error';
     statusText.textContent = `Error: ${err.message}`;
+  }
+}
+
+// ── AI Analysis ──
+async function runAIAnalysis() {
+  if (!aiEnabled) {
+    showToast('AI not configured on server');
+    return;
+  }
+
+  const ticketsToAnalyze = rawTicketsForAI.length > 0 ? rawTicketsForAI : DEMO_TICKETS;
+  if (ticketsToAnalyze.length === 0) {
+    showToast('Load tickets first, then run AI analysis');
+    return;
+  }
+
+  const btn = $('#btn-ai');
+  btn.disabled = true;
+  btn.textContent = 'Analyzing...';
+  statusBar.className = 'status-bar ai-active';
+  statusText.innerHTML = '<span class="loading-spinner"></span> Starting AI analysis of ' + ticketsToAnalyze.length + ' tickets...';
+
+  const aiStartTime = Date.now();
+
+  try {
+    const res = await fetch('/api/ai-analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tickets: ticketsToAnalyze }),
+    });
+
+    if (!res.ok) {
+      let errMsg = `HTTP ${res.status}`;
+      try {
+        const errData = await res.json();
+        errMsg = errData.error || errMsg;
+      } catch {
+        const text = await res.text().catch(() => '');
+        if (text.startsWith('<!DOCTYPE') || text.startsWith('<html')) {
+          errMsg = `Server returned HTML instead of JSON (HTTP ${res.status}). The server may have crashed — check the terminal for errors.`;
+        } else if (text) {
+          errMsg = text.substring(0, 500);
+        }
+      }
+      throw new Error(errMsg);
+    }
+
+    // Read SSE stream for progress updates
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let finalData = null;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      // Parse SSE events from the buffer
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // keep incomplete line in buffer
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const event = JSON.parse(line.slice(6));
+          const elapsed = ((Date.now() - aiStartTime) / 1000).toFixed(0);
+
+          if (event.type === 'progress') {
+            // Build progress bar for analyzing phase
+            let progressHtml = `<span class="loading-spinner"></span> ${escHtml(event.message)}`;
+            if (event.phase === 'analyzing' && event.total > 0) {
+              const pct = Math.round((event.completed / event.total) * 100);
+              progressHtml += `<div class="ai-progress-bar"><div class="ai-progress-fill" style="width:${pct}%"></div></div>`;
+            }
+            progressHtml += `<span class="ai-elapsed">${elapsed}s</span>`;
+            statusText.innerHTML = progressHtml;
+            // Update button text with batch count
+            if (event.batch && event.totalBatches) {
+              btn.textContent = `Analyzing (${event.batch}/${event.totalBatches})...`;
+            } else if (event.phase === 'insights') {
+              btn.textContent = 'Generating insights...';
+            }
+          } else if (event.type === 'done') {
+            finalData = event.result;
+          } else if (event.type === 'error') {
+            throw new Error(event.error);
+          }
+        } catch (parseErr) {
+          if (parseErr.message && !parseErr.message.includes('JSON')) throw parseErr;
+          // Ignore JSON parse errors from partial lines
+        }
+      }
+    }
+
+    if (!finalData) throw new Error('AI analysis ended without results');
+
+    const data = finalData;
+    allTickets = data.tickets;
+    currentAnalytics = data.analytics;
+    currentBatchInsights = data.batchInsights || null;
+    if (data.priorityMap) currentPriorityMap = data.priorityMap;
+    aiAnalyzed = true;
+
+    renderSummary(data.summary);
+    renderAnalytics(data.analytics, data.summary);
+    renderAIInsights(currentBatchInsights);
+    applyFilters();
+
+    // Auto-switch to AI Insights tab so user sees the combined view
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    $('#tab-btn-ai-insights').classList.add('active');
+    document.getElementById('tab-ai-insights').classList.add('active');
+
+    const stats = data.aiStats || {};
+    statusBar.className = 'status-bar ai-active';
+    statusText.textContent = `AI Analysis complete (${stats.elapsedSeconds || '?'}s). ${stats.enhanced || 0} tickets enhanced, ${stats.categoryChanges || 0} categories reclassified by AI.`;
+    btn.textContent = 'Re-Analyze with AI';
+  } catch (err) {
+    statusBar.className = 'status-bar error';
+    statusText.innerHTML = '';
+    const errEl = document.createElement('div');
+    errEl.className = 'error-detail';
+    errEl.innerHTML = `
+      <strong>AI Analysis Failed</strong><br>
+      <span class="error-message">${escHtml(err.message).replace(/\n/g, '<br>')}</span>
+    `;
+    statusText.appendChild(errEl);
+    console.error('[AI Error]', err);
+  } finally {
+    btn.disabled = false;
   }
 }
 
@@ -334,37 +540,47 @@ function renderAnalytics(analytics, summary) {
 
   $('#analytics-section').classList.remove('hidden');
 
-  // Category bars
-  renderCategoryBars(summary.categoryBreakdown);
+  // Issue Type bars (fall back to category if no issue types)
+  const hasIssueTypes = summary.issueTypeBreakdown && Object.keys(summary.issueTypeBreakdown).length > 0;
+  renderCategoryBars(hasIssueTypes ? summary.issueTypeBreakdown : summary.categoryBreakdown, hasIssueTypes);
 
-  // Category detail table
-  renderCategoryTable(analytics.categoryDeepBreakdown);
+
 
   // Priority bars
   renderPriorityBars(analytics.priorityBreakdown);
 
+  // Clients tab
+  renderClients();
+
   // Trend chart
   renderTrendChart(analytics.trendData);
 
-  // Top opportunities
-  renderOpportunities(analytics.topOpportunities);
-
-  // ROI projection
-  renderROI(analytics.roiProjection);
-
-  // Quick Wins tab
-  renderQuickWins();
+  // Overview charts (client volume, day of week, age, auto score, donuts)
+  renderOverviewCharts(analytics.overviewCharts);
 
   // SDE Metrics tab
   renderSDEMetrics();
+
+  // Quick Hitter Validation
+  renderQHValidation(analytics.quickHitterValidation);
+
+  // Do It Now Analysis
+  renderDoItNow(analytics.doItNowAnalysis);
+
+  // AI Insights tab (show placeholder if not yet analyzed)
+  if (!aiAnalyzed) renderAIInsights(null);
 }
 
-function renderCategoryBars(categoryBreakdown) {
+function renderCategoryBars(breakdown, isIssueType) {
   const barsContainer = $('#category-bars');
   barsContainer.innerHTML = '';
 
-  const maxCount = Math.max(...Object.values(categoryBreakdown));
-  const sorted = Object.entries(categoryBreakdown).sort((a, b) => b[1] - a[1]);
+  // Update the heading based on data type
+  const heading = barsContainer.closest('.panel-card')?.querySelector('h3');
+  if (heading) heading.textContent = isIssueType ? 'Top 15 Issue Types' : 'Category Breakdown';
+
+  const maxCount = Math.max(...Object.values(breakdown));
+  const sorted = Object.entries(breakdown).sort((a, b) => b[1] - a[1]).slice(0, 15);
   const colors = ['fill-primary', 'fill-green', 'fill-yellow', 'fill-orange', 'fill-purple', 'fill-cyan', 'fill-red'];
 
   sorted.forEach(([label, count], i) => {
@@ -372,7 +588,7 @@ function renderCategoryBars(categoryBreakdown) {
     const color = colors[i % colors.length];
     barsContainer.innerHTML += `
       <div class="cat-bar-row">
-        <span class="cat-bar-label">${label}</span>
+        <span class="cat-bar-label">${escHtml(label)}</span>
         <div class="cat-bar-track">
           <div class="cat-bar-fill ${color}" style="width: ${pct}%"></div>
         </div>
@@ -381,33 +597,19 @@ function renderCategoryBars(categoryBreakdown) {
   });
 }
 
-function renderCategoryTable(categoryDeepBreakdown) {
-  const tbody = $('#category-detail-table tbody');
-  tbody.innerHTML = '';
-
-  for (const cat of categoryDeepBreakdown) {
-    tbody.innerHTML += `
-      <tr>
-        <td>${cat.category}</td>
-        <td>${cat.count}</td>
-        <td>${cat.pctOfTotal}%</td>
-        <td>${cat.avgAutomationScore}%</td>
-        <td>${cat.totalMinutesSaveable}</td>
-        <td>${cat.quickHitters}</td>
-      </tr>`;
-  }
-}
-
 function renderPriorityBars(priorityBreakdown) {
   const container = $('#priority-bars');
   container.innerHTML = '';
 
   const maxCount = Math.max(...Object.values(priorityBreakdown));
-  const colorMap = { 'Critical': 'fill-red', 'High': 'fill-orange', 'Medium': 'fill-yellow', 'Low': 'fill-green' };
+  const colorMap = { 'Critical': 'fill-red', 'High': 'fill-orange', 'Medium': 'fill-yellow', 'Low': 'fill-green', 'Standard': 'fill-cyan' };
 
   const entries = Object.entries(priorityBreakdown).sort((a, b) => {
-    const order = ['Critical', 'High', 'Medium', 'Low'];
-    return order.indexOf(a[0]) - order.indexOf(b[0]);
+    const order = ['Critical', 'High', 'Medium', 'Low', 'Standard'];
+    const ai = order.indexOf(a[0]);
+    const bi = order.indexOf(b[0]);
+    // Known priorities sort first in order, unknown priorities sort to end
+    return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
   });
 
   for (const [label, count] of entries) {
@@ -450,67 +652,1013 @@ function renderTrendChart(trendData) {
   note.textContent = `${trendData.length} days shown | ${total} total tickets | ${avg} avg/day`;
 }
 
-function renderOpportunities(topOpportunities) {
-  const container = $('#opportunities-list');
-
-  if (!topOpportunities || topOpportunities.length === 0) {
-    container.innerHTML = '<div class="empty-state"><p>No automation opportunities identified yet.</p></div>';
+// ── Render AI Batch Insights ──
+function renderAIInsights(insights) {
+  if (!insights) {
+    // Show empty state when no AI data
+    const execContainer = $('#ai-exec-summary');
+    execContainer.innerHTML = `
+      <div class="empty-state">
+        <h3>No AI Insights Yet</h3>
+        <p>Click "AI Analyze" to run Claude AI analysis on your tickets for executive summaries, systemic issue detection, strategic recommendations, and automation opportunities.</p>
+      </div>`;
+    $('#ai-systemic-issues').innerHTML = '';
+    $('#ai-strategic-recs').innerHTML = '';
+    $('#ai-workload-insights').innerHTML = '';
+    $('#ai-auto-opportunities').innerHTML = '';
     return;
   }
 
-  container.innerHTML = topOpportunities.map((opp, i) => `
-    <div class="opportunity-card">
-      <div class="opp-rank">#${i + 1}</div>
-      <div class="opp-details">
-        <div class="opp-name">${opp.category}</div>
-        <div class="opp-stats">
-          <span>${opp.count} tickets</span>
-          <span>Auto: ${opp.avgAutomationScore}%</span>
-          <span>${opp.totalMinutesSaveable} min saveable</span>
+  // Executive Summary
+  const execContainer = $('#ai-exec-summary');
+  if (insights.executiveSummary) {
+    execContainer.innerHTML = `
+      <div class="ai-exec-banner">
+        <div class="ai-exec-icon">AI</div>
+        <div class="ai-exec-content">
+          <h3>Executive Summary</h3>
+          <p>${escHtml(insights.executiveSummary)}</p>
         </div>
-      </div>
-      <div class="opp-impact">
-        <div class="opp-impact-number">${opp.impactScore}</div>
-        <div class="opp-impact-label">Impact Score</div>
-      </div>
-    </div>
-  `).join('');
+      </div>`;
+  } else {
+    execContainer.innerHTML = '';
+  }
+
+  // Systemic Issues
+  const issuesContainer = $('#ai-systemic-issues');
+  if (insights.systemicIssues && insights.systemicIssues.length > 0) {
+    issuesContainer.innerHTML = `
+      <h3>Systemic Issues Detected</h3>
+      <p class="panel-desc">Cross-ticket patterns that suggest underlying infrastructure or process problems</p>
+      <div class="ai-issues-list">
+        ${insights.systemicIssues.map(issue => `
+          <div class="ai-issue-card ai-severity-${issue.severity || 'medium'}">
+            <div class="ai-issue-header">
+              <span class="ai-issue-severity badge-severity-${issue.severity || 'medium'}">${(issue.severity || 'medium').toUpperCase()}</span>
+              <span class="ai-issue-title">${escHtml(issue.issue)}</span>
+            </div>
+            <p class="ai-issue-desc">${escHtml(issue.description)}</p>
+            ${issue.recommendation ? `<p class="ai-issue-rec"><strong>Action:</strong> ${escHtml(issue.recommendation)}</p>` : ''}
+            ${issue.affectedTickets && issue.affectedTickets.length > 0 ? `
+              <p class="ai-issue-tickets">Affected: ${issue.affectedTickets.map(id => `<code>${escHtml(String(id))}</code>`).join(' ')}</p>
+            ` : ''}
+          </div>
+        `).join('')}
+      </div>`;
+  } else {
+    issuesContainer.innerHTML = `
+      <h3>Systemic Issues</h3>
+      <p class="panel-desc">No systemic issues detected in this batch. This is a positive signal for infrastructure health.</p>`;
+  }
+
+  // Strategic Recommendations
+  const recsContainer = $('#ai-strategic-recs');
+  if (insights.strategicRecommendations && insights.strategicRecommendations.length > 0) {
+    recsContainer.innerHTML = `
+      <h3>Strategic Recommendations</h3>
+      <p class="panel-desc">AI-generated action items to improve operations</p>
+      <div class="ai-recs-grid">
+        ${insights.strategicRecommendations.map(rec => `
+          <div class="ai-rec-card">
+            <div class="ai-rec-header">
+              <span class="ai-rec-title">${escHtml(rec.title)}</span>
+              <div class="ai-rec-tags">
+                <span class="ai-rec-tag ai-rec-impact-${rec.impact || 'medium'}">${(rec.impact || 'medium')} impact</span>
+                <span class="ai-rec-tag ai-rec-effort-${rec.effort || 'medium'}">${(rec.effort || 'medium')} effort</span>
+                ${rec.category ? `<span class="ai-rec-tag ai-rec-cat">${rec.category}</span>` : ''}
+              </div>
+            </div>
+            <p class="ai-rec-desc">${escHtml(rec.description)}</p>
+          </div>
+        `).join('')}
+      </div>`;
+  } else {
+    recsContainer.innerHTML = '';
+  }
+
+  // Workload Insights with Peak Hours chart
+  const workloadContainer = $('#ai-workload-insights');
+  const wl = insights.workloadInsights;
+  if (wl && (wl.volumeAssessment || wl.capacityRisk)) {
+    const capacityColorMap = { healthy: 'green', at_risk: 'yellow', overloaded: 'red' };
+    const capacityColor = capacityColorMap[wl.capacityRisk] || 'text-dim';
+
+    // Build peak hours bar chart from AI data
+    let peakHoursHtml = '';
+    if (wl.peakHours && wl.peakHours.length > 0) {
+      const maxCount = Math.max(...wl.peakHours.map(h => h.count));
+      const topThreshold = maxCount * 0.8;
+      const highThreshold = maxCount * 0.5;
+      peakHoursHtml = `
+        <div class="ai-workload-card" style="grid-column: 1 / -1;">
+          <div class="ai-workload-label">Peak Hours</div>
+          <div class="peak-hours-chart">
+            ${wl.peakHours.map(h => {
+              const pct = maxCount > 0 ? (h.count / maxCount * 100) : 0;
+              const cls = h.count >= topThreshold ? 'peak-top' : h.count >= highThreshold ? 'peak-high' : '';
+              return `<div class="peak-hour-bar ${cls}" style="height: ${Math.max(pct, 4)}%;" title="${h.hour}: ${h.count} tickets (${h.percentage}%)"></div>`;
+            }).join('')}
+          </div>
+          <div class="peak-hours-labels">
+            ${wl.peakHours.map(h => `<span>${h.hour.replace(' AM','a').replace(' PM','p')}</span>`).join('')}
+          </div>
+        </div>`;
+    }
+
+    workloadContainer.innerHTML = `
+      <h3>Workload Analysis</h3>
+      <div class="ai-workload-grid">
+        ${wl.capacityRisk ? `
+          <div class="ai-workload-card ai-capacity-${wl.capacityRisk}">
+            <div class="ai-workload-label">Team Capacity</div>
+            <div class="ai-workload-value" style="color: var(--${capacityColor})">${(wl.capacityRisk || 'unknown').replace('_', ' ').toUpperCase()}</div>
+            ${wl.capacityNote ? `<div class="ai-workload-note">${escHtml(wl.capacityNote)}</div>` : ''}
+          </div>
+        ` : ''}
+        ${wl.volumeAssessment ? `
+          <div class="ai-workload-card">
+            <div class="ai-workload-label">Volume Assessment</div>
+            <div class="ai-workload-note">${escHtml(wl.volumeAssessment)}</div>
+          </div>
+        ` : ''}
+        ${wl.peakPatterns ? `
+          <div class="ai-workload-card">
+            <div class="ai-workload-label">Peak Patterns</div>
+            <div class="ai-workload-note">${escHtml(wl.peakPatterns)}</div>
+          </div>
+        ` : ''}
+        ${peakHoursHtml}
+      </div>`;
+  } else {
+    workloadContainer.innerHTML = '';
+  }
+
+  // Client Insights
+  const clientContainer = $('#ai-client-insights');
+  const ci = insights.clientInsights;
+  if (ci && (ci.topClients?.length > 0 || ci.clientSummary)) {
+    clientContainer.innerHTML = `
+      <h3>Top Clients</h3>
+      ${ci.clientSummary ? `<div class="client-summary">${escHtml(ci.clientSummary)}</div>` : ''}
+      <div class="client-insights-grid">
+        ${(ci.topClients || []).map(c => `
+          <div class="client-row">
+            <span class="client-name" title="${escHtml(c.name)}">${escHtml(c.name)}</span>
+            <span class="client-count">${c.ticketCount}</span>
+            <div class="client-issues">
+              ${(c.topIssues || []).map(issue => `<span class="client-issue-badge">${escHtml(issue)}</span>`).join('')}
+            </div>
+            ${c.note ? `<div class="client-note">${escHtml(c.note)}</div>` : ''}
+          </div>
+        `).join('')}
+      </div>`;
+  } else {
+    clientContainer.innerHTML = '';
+  }
+
+  // Service Delivery Insights
+  const sdContainer = $('#ai-service-delivery');
+  const sd = insights.serviceDeliveryInsights;
+  if (sd && (sd.overallAssessment || sd.improvements?.length > 0)) {
+    const impactColors = { high: 'var(--red)', medium: 'var(--yellow)', low: 'var(--green)' };
+    sdContainer.innerHTML = `
+      <h3>Service Delivery Insights</h3>
+      ${sd.overallAssessment ? `<div class="service-delivery-assessment">${escHtml(sd.overallAssessment)}</div>` : ''}
+      ${sd.improvements?.length > 0 ? `
+        <h4 style="font-size: 0.85rem; margin-bottom: 0.5rem; color: var(--text-dim);">Improvement Areas</h4>
+        <div class="service-delivery-grid">
+          ${sd.improvements.map(imp => `
+            <div class="service-improvement-card">
+              <div class="service-improvement-header">
+                <span class="service-improvement-area">${escHtml(imp.area)}</span>
+                <span class="badge badge-severity-${imp.impact}" style="color: ${impactColors[imp.impact] || 'var(--text-dim)'}; font-size: 0.7rem;">${(imp.impact || '').toUpperCase()}</span>
+              </div>
+              <div class="service-improvement-finding">${escHtml(imp.finding)}</div>
+              <div class="service-improvement-rec">${escHtml(imp.recommendation)}</div>
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
+      ${sd.strengths?.length > 0 ? `
+        <h4 style="font-size: 0.85rem; margin: 0.75rem 0 0.5rem; color: var(--text-dim);">Strengths</h4>
+        <div class="service-strengths">
+          ${sd.strengths.map(s => `<span class="service-strength">${escHtml(s)}</span>`).join('')}
+        </div>
+      ` : ''}
+    `;
+  } else {
+    sdContainer.innerHTML = '';
+  }
+
+  // Automation Opportunities
+  const autoContainer = $('#ai-auto-opportunities');
+  if (insights.automationOpportunities && insights.automationOpportunities.length > 0) {
+    autoContainer.innerHTML = `
+      <h3>Automation Opportunities</h3>
+      <p class="panel-desc">High-impact automation targets identified by AI analysis — with specific implementation guidance per issue type</p>
+      <div class="ai-auto-list">
+        ${insights.automationOpportunities.map(opp => `
+          <div class="ai-auto-card">
+            <div class="ai-auto-header">
+              <span class="ai-auto-title">${escHtml(opp.opportunity)}</span>
+              <div class="ai-auto-badges">
+                ${opp.method ? `<span class="badge badge-pia">${escHtml((opp.method || '').replace(/_/g, ' '))}</span>` : ''}
+                ${opp.estimatedTimeSaved ? `<span class="ai-auto-time">${opp.estimatedTimeSaved} min/mo saved</span>` : ''}
+                ${opp.currentVolume ? `<span class="ai-auto-volume">${opp.currentVolume} tickets in batch</span>` : ''}
+                ${opp.piaCandidate ? `<span class="badge badge-pia-candidate">PIA Candidate</span>` : ''}
+              </div>
+            </div>
+            <p class="ai-auto-desc">${escHtml(opp.description)}</p>
+            ${opp.estimatedSetupHours ? `<p class="ai-auto-setup">Setup estimate: ~${opp.estimatedSetupHours} hours</p>` : ''}
+            ${opp.ticketTypes && opp.ticketTypes.length > 0 ? `
+              <div class="ai-auto-types">Issue Types: ${opp.ticketTypes.map(t => `<span class="badge badge-category">${escHtml(t)}</span>`).join(' ')}</div>
+            ` : ''}
+          </div>
+        `).join('')}
+      </div>`;
+  } else {
+    autoContainer.innerHTML = '';
+  }
 }
 
-function renderROI(roi) {
-  const container = $('#roi-content');
+// ── Quick Hitter Validation ──
 
-  if (!roi) {
-    container.innerHTML = '<div class="empty-state"><p>No ROI data available.</p></div>';
+function renderQHValidation(qhValidation) {
+  const summaryEl = $('#qh-validation-summary');
+
+  if (!qhValidation || qhValidation.totalPredicted === 0) {
+    summaryEl.innerHTML = `
+      <div class="empty-state">
+        <h3>No Quick Hitters Detected</h3>
+        <p>No tickets were predicted as 5-20 minute fixes in this dataset.</p>
+      </div>`;
+    return;
+  }
+
+  const v = qhValidation;
+  const accuracyColor = v.accuracyRate >= 75 ? 'qh-stat-good' : v.accuracyRate >= 50 ? 'qh-stat-warn' : 'qh-stat-bad';
+  const piaRate = v.totalPredicted > 0 ? Math.round((v.usedPIACount / v.totalPredicted) * 100) : 0;
+
+  summaryEl.innerHTML = `
+    <h3>Quick Hitter Validation</h3>
+    <p class="panel-desc">Comparing predicted 5-20 minute fixes against actual time worked. Accurate = actual time &le; 25 min.</p>
+    <div class="qh-stat-grid">
+      <div class="qh-stat-card">
+        <div class="qh-stat-number">${v.totalPredicted}</div>
+        <div class="qh-stat-label">Predicted Quick Hitters</div>
+      </div>
+      <div class="qh-stat-card">
+        <div class="qh-stat-number">${v.withActualTime}</div>
+        <div class="qh-stat-label">With Time Data</div>
+      </div>
+      <div class="qh-stat-card ${accuracyColor}">
+        <div class="qh-stat-number">${v.accuracyRate != null ? v.accuracyRate + '%' : 'N/A'}</div>
+        <div class="qh-stat-label">Prediction Accuracy</div>
+      </div>
+      <div class="qh-stat-card">
+        <div class="qh-stat-number">${v.accurateCount}</div>
+        <div class="qh-stat-label">Accurate</div>
+      </div>
+      <div class="qh-stat-card qh-stat-bad">
+        <div class="qh-stat-number">${v.underestimatedCount}</div>
+        <div class="qh-stat-label">Underestimated</div>
+      </div>
+      <div class="qh-stat-card qh-stat-pia">
+        <div class="qh-stat-number">${v.usedPIACount} <span class="qh-stat-sub">(${piaRate}%)</span></div>
+        <div class="qh-stat-label">Used PIA / Automation</div>
+      </div>
+    </div>`;
+
+  // Ticket-level detail table
+  const tktTbody = $('#qh-ticket-table tbody');
+  renderQHTicketRows(tktTbody, v.tickets, 'all');
+
+  // Filter handler
+  const filter = $('#qh-status-filter');
+  filter.onchange = () => {
+    renderQHTicketRows(tktTbody, v.tickets, filter.value);
+    updateQHSelectedCount();
+  };
+
+  // Populate priority dropdown from the live Autotask map
+  const prioritySelect = $('#qh-priority-select');
+  prioritySelect.innerHTML = '<option value="">Set Priority To...</option>';
+  for (const [val, label] of Object.entries(currentPriorityMap)) {
+    prioritySelect.innerHTML += `<option value="${val}">${escHtml(label)}</option>`;
+  }
+
+  // Select-all checkbox
+  const checkAll = $('#qh-check-all');
+  checkAll.onchange = () => {
+    tktTbody.querySelectorAll('.qh-row-check').forEach(cb => { cb.checked = checkAll.checked; });
+    updateQHSelectedCount();
+  };
+
+  // "Select All Accurate" button
+  $('#qh-select-all-accurate').onclick = () => {
+    tktTbody.querySelectorAll('.qh-row-check').forEach(cb => { cb.checked = false; });
+    tktTbody.querySelectorAll('tr.qh-row-accurate .qh-row-check').forEach(cb => { cb.checked = true; });
+    updateQHSelectedCount();
+  };
+
+  // Update selected count on any checkbox change
+  tktTbody.addEventListener('change', (e) => {
+    if (e.target.classList.contains('qh-row-check')) updateQHSelectedCount();
+  });
+
+  // Enable/disable the update button based on selections + priority choice
+  prioritySelect.onchange = updateQHSelectedCount;
+
+  // The update button
+  $('#qh-set-priority-btn').onclick = () => qhUpdatePriority(tktTbody);
+}
+
+function updateQHSelectedCount() {
+  const checked = document.querySelectorAll('#qh-ticket-table tbody .qh-row-check:checked');
+  const label = $('#qh-selected-count');
+  const btn = $('#qh-set-priority-btn');
+  const priorityVal = $('#qh-priority-select').value;
+  label.textContent = checked.length > 0 ? `${checked.length} selected` : '';
+  btn.disabled = !(checked.length > 0 && priorityVal);
+}
+
+async function qhUpdatePriority(tbody) {
+  const priorityVal = parseInt($('#qh-priority-select').value);
+  if (!priorityVal) return;
+
+  const checked = tbody.querySelectorAll('.qh-row-check:checked');
+  const ticketIds = Array.from(checked).map(cb => Number(cb.dataset.ticketId)).filter(Boolean);
+  if (ticketIds.length === 0) return;
+
+  const priorityLabel = currentPriorityMap[priorityVal] || `Priority ${priorityVal}`;
+
+  const btn = $('#qh-set-priority-btn');
+  btn.disabled = true;
+  btn.textContent = `Updating ${ticketIds.length}...`;
+
+  try {
+    const resp = await fetch('/api/tickets/update-priority', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ticketIds, priority: priorityVal }),
+    });
+    const result = await resp.json();
+
+    if (!resp.ok) throw new Error(result.error || 'Update failed');
+
+    const msg = `Updated ${result.updated.length} ticket(s) to "${priorityLabel}"` +
+      (result.failed.length > 0 ? ` (${result.failed.length} failed)` : '');
+
+    // Flash success on updated rows
+    for (const id of result.updated) {
+      const row = tbody.querySelector(`tr[data-ticket-id="${id}"]`);
+      if (row) {
+        row.classList.add('qh-row-updated');
+        row.querySelector('.qh-row-check').checked = false;
+      }
+    }
+    updateQHSelectedCount();
+    btn.textContent = msg;
+    setTimeout(() => { btn.textContent = 'Update Selected'; }, 4000);
+  } catch (err) {
+    btn.textContent = `Error: ${err.message}`;
+    setTimeout(() => { btn.textContent = 'Update Selected'; btn.disabled = false; }, 4000);
+  }
+}
+
+function renderQHTicketRows(tbody, tickets, filterVal) {
+  tbody.innerHTML = '';
+  const filtered = filterVal === 'all' ? tickets
+    : filterVal === 'pia' ? tickets.filter(t => t.usedPIA)
+    : tickets.filter(t => t.status === filterVal);
+
+  for (const t of filtered) {
+    const varianceStr = t.variance != null
+      ? (t.variance > 0 ? `<span class="qh-cell-bad">+${t.variance}m</span>` : `<span class="qh-cell-good">${t.variance}m</span>`)
+      : '—';
+    const verdictBadge = t.status === 'accurate'
+      ? '<span class="badge badge-accurate">Accurate</span>'
+      : t.status === 'underestimated'
+        ? '<span class="badge badge-underestimated">Underestimated</span>'
+        : '<span class="badge badge-nodata">No Data</span>';
+    const piaBadge = t.usedPIA
+      ? `<span class="badge badge-pia" title="${escHtml(t.piaIndicator || '')} (${t.piaSource || 'detected'})">${t.piaSource === 'notes' ? 'Yes (Notes)' : 'Yes'}</span>`
+      : '—';
+
+    tbody.innerHTML += `
+      <tr class="qh-row-${t.status}" data-ticket-id="${t.ticketId}">
+        <td class="qh-check-col" onclick="event.stopPropagation()"><input type="checkbox" class="qh-row-check" data-ticket-id="${t.ticketId}" /></td>
+        <td onclick="openTicketDetail('${t.ticketId}')" style="cursor:pointer">#${t.ticketNumber || t.ticketId}</td>
+        <td onclick="openTicketDetail('${t.ticketId}')" style="cursor:pointer" title="${escHtml(t.title)}">${escHtml((t.title || '').slice(0, 50))}${(t.title || '').length > 50 ? '...' : ''}</td>
+        <td>${escHtml(t.companyName)}</td>
+        <td>${escHtml(t.issueType)}</td>
+        <td>${escHtml(t.currentPriority || '—')}</td>
+        <td>${t.estimatedMinutes}m</td>
+        <td>${t.actualMinutes != null ? t.actualMinutes + 'm' : '—'}</td>
+        <td>${varianceStr}</td>
+        <td>${piaBadge}</td>
+        <td>${verdictBadge}</td>
+      </tr>`;
+  }
+}
+
+// ── Overview Charts ──
+
+function renderOverviewCharts(charts) {
+  if (!charts) return;
+  renderHorizontalBars('client-volume-bars', charts.ticketsByClient, 'client', 'count');
+  renderHorizontalBars('noisy-clients-bars', charts.ticketsByClient.slice(0, 10), 'client', 'count');
+  renderHorizontalBars('resolution-by-priority-bars', charts.avgResolutionByPriority, 'priority', 'avgMinutes', 'min');
+  renderHorizontalBars('day-of-week-bars', charts.ticketsByDayOfWeek, 'day', 'count');
+  renderHeatmap('hour-of-day-bars', charts.ticketsByHourOfDay, 'hour', 'count');
+  renderHorizontalBars('ticket-age-bars', charts.ticketAgeDistribution, 'bucket', 'count');
+  renderDonut('qh-split-donut', [
+    { label: 'Quick Hitters', value: charts.quickHitterSplit.quickHitters, color: '#7ac143' },
+    { label: 'Long-Running', value: charts.quickHitterSplit.longRunning, color: '#3786de' },
+  ]);
+  renderDonut('pia-coverage-donut', [
+    { label: 'PIA Automated', value: charts.piaCoverage.piaUsed, color: '#a78bfa' },
+    { label: 'Manual', value: charts.piaCoverage.manual, color: '#64748b' },
+  ]);
+  renderDonut('zero-hours-donut', [
+    { label: 'Zero Hours', value: charts.zeroHoursCompleted.zeroHours, color: '#ef0b3c' },
+    { label: 'Has Hours', value: charts.zeroHoursCompleted.hasHours, color: '#328d46' },
+  ]);
+}
+
+function renderHorizontalBars(containerId, data, labelKey, valueKey, suffix) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  el.innerHTML = '';
+
+  if (!data || data.length === 0) {
+    el.innerHTML = '<p class="empty-state-text">No data available</p>';
+    return;
+  }
+
+  const maxVal = Math.max(...data.map(d => d[valueKey]));
+  const colors = ['fill-primary', 'fill-green', 'fill-yellow', 'fill-orange', 'fill-purple', 'fill-cyan', 'fill-red'];
+  const sfx = suffix ? ` ${suffix}` : '';
+
+  data.forEach((d, i) => {
+    const pct = maxVal > 0 ? (d[valueKey] / maxVal) * 100 : 0;
+    const color = colors[i % colors.length];
+    el.innerHTML += `
+      <div class="cat-bar-row">
+        <span class="cat-bar-label">${escHtml(String(d[labelKey]))}</span>
+        <div class="cat-bar-track">
+          <div class="cat-bar-fill ${color}" style="width: ${pct}%"></div>
+        </div>
+        <span class="cat-bar-count">${d[valueKey]}${sfx}</span>
+      </div>`;
+  });
+}
+
+function renderHeatmap(containerId, data, labelKey, valueKey) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  if (!data || data.length === 0) {
+    el.innerHTML = '<p class="empty-state-text">No data available</p>';
+    return;
+  }
+  const maxVal = Math.max(...data.map(d => d[valueKey]), 1);
+  el.innerHTML = '<div class="heatmap-row">' + data.map(d => {
+    const intensity = maxVal > 0 ? d[valueKey] / maxVal : 0;
+    const bg = `rgba(50, 141, 70, ${0.1 + intensity * 0.85})`;
+    return `<div class="heatmap-cell" style="background:${bg}" title="${d[labelKey]}: ${d[valueKey]}">
+      <span class="heatmap-label">${escHtml(String(d[labelKey]))}</span>
+      <span class="heatmap-count">${d[valueKey]}</span>
+    </div>`;
+  }).join('') + '</div>';
+}
+
+function renderDonut(containerId, segments) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+
+  const total = segments.reduce((s, seg) => s + seg.value, 0);
+  if (total === 0) {
+    el.innerHTML = '<p class="empty-state-text">No data</p>';
+    return;
+  }
+
+  // Build conic-gradient stops
+  let conicStops = [];
+  let cumPct = 0;
+  segments.forEach(seg => {
+    const pct = (seg.value / total) * 100;
+    conicStops.push(`${seg.color} ${cumPct}% ${cumPct + pct}%`);
+    cumPct += pct;
+  });
+
+  const legendHtml = segments.map(seg => {
+    const pct = ((seg.value / total) * 100).toFixed(1);
+    return `<div class="donut-legend-item">
+      <span class="donut-legend-swatch" style="background:${seg.color}"></span>
+      <span class="donut-legend-label">${escHtml(seg.label)}</span>
+      <span class="donut-legend-count">${seg.value} (${pct}%)</span>
+    </div>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div class="donut-chart-container">
+      <div class="donut-ring" style="background: conic-gradient(${conicStops.join(', ')});">
+        <div class="donut-hole">
+          <span class="donut-total">${total}</span>
+          <span class="donut-total-label">total</span>
+        </div>
+      </div>
+    </div>
+    <div class="donut-legend">${legendHtml}</div>`;
+}
+
+// ── Do It Now Analysis ──
+function renderDoItNow(dinAnalysis) {
+  const pieEl = $('#do-it-now-pie');
+  const legendEl = $('#do-it-now-pie-legend');
+  const issueTbody = $('#din-issue-type-table tbody');
+  const predTbody = $('#din-predictions-table tbody');
+
+  if (!dinAnalysis || dinAnalysis.totalTickets === 0) {
+    pieEl.innerHTML = '<p class="empty-state-text">No ticket data available</p>';
+    legendEl.innerHTML = '';
+    issueTbody.innerHTML = '';
+    predTbody.innerHTML = '';
+    return;
+  }
+
+  // --- Pie Chart (CSS conic-gradient) ---
+  const pieColors = ['#328d46', '#3786de', '#db991a', '#fb923c', '#ef0b3c', '#a78bfa', '#b6d469', '#64748b'];
+  const pieEntries = Object.entries(dinAnalysis.priorityPie).sort((a, b) => b[1] - a[1]);
+  const total = pieEntries.reduce((sum, [, c]) => sum + c, 0);
+
+  let conicStops = [];
+  let cumPct = 0;
+  pieEntries.forEach(([label, count], i) => {
+    const pct = (count / total) * 100;
+    const color = pieColors[i % pieColors.length];
+    conicStops.push(`${color} ${cumPct}% ${cumPct + pct}%`);
+    cumPct += pct;
+  });
+
+  pieEl.innerHTML = `<div class="din-pie-circle" style="background: conic-gradient(${conicStops.join(', ')});"></div>`;
+
+  legendEl.innerHTML = pieEntries.map(([label, count], i) => {
+    const pct = ((count / total) * 100).toFixed(1);
+    const color = pieColors[i % pieColors.length];
+    const isDIN = label === dinAnalysis.doItNowLabel;
+    return `<div class="din-legend-item${isDIN ? ' din-legend-highlight' : ''}">
+      <span class="din-legend-swatch" style="background:${color}"></span>
+      <span class="din-legend-label">${escHtml(label)}</span>
+      <span class="din-legend-count">${count} (${pct}%)</span>
+    </div>`;
+  }).join('');
+
+  // --- Issue Type Do-It-Now Rate Table ---
+  issueTbody.innerHTML = '';
+  for (const row of dinAnalysis.byIssueType) {
+    const rateClass = row.doItNowRate >= 50 ? 'qh-cell-bad' : row.doItNowRate >= 25 ? 'qh-cell-warn' : 'qh-cell-good';
+    issueTbody.innerHTML += `
+      <tr class="din-issue-row" data-issue-type="${escHtml(row.issueType)}" style="cursor:pointer" title="Click to see tickets">
+        <td>${escHtml(row.issueType)}</td>
+        <td>${row.total}</td>
+        <td>${row.doItNowCount}</td>
+        <td><span class="${rateClass}">${row.doItNowRate}%</span></td>
+      </tr>`;
+  }
+  if (dinAnalysis.byIssueType.length === 0) {
+    issueTbody.innerHTML = '<tr><td colspan="4" class="empty-state-text">Not enough data to determine rates</td></tr>';
+  }
+
+  // Click handler: drill into issue type tickets
+  issueTbody.querySelectorAll('.din-issue-row').forEach(row => {
+    row.addEventListener('click', () => {
+      const issueType = row.dataset.issueType;
+      drillIntoIssueType(issueType, dinAnalysis.doItNowPriorityValue);
+    });
+  });
+
+  // --- Predictions Table with sorting & filtering ---
+  const predictions = dinAnalysis.predictions || [];
+  let dinSortKey = 'predictionScore';
+  let dinSortAsc = false;
+
+  function dinGetActualMin(p) { return p.workedHours > 0 ? Math.round(p.workedHours * 60) : null; }
+  function dinGetVariance(p) {
+    const actual = dinGetActualMin(p);
+    return (p.estimatedMinutes != null && actual != null) ? actual - p.estimatedMinutes : null;
+  }
+
+  function dinSortVal(p, key) {
+    switch (key) {
+      case 'ticketNumber': return p.ticketNumber || p.ticketId;
+      case 'companyName': return (p.companyName || '').toLowerCase();
+      case 'issueType': return (p.issueType || '').toLowerCase();
+      case 'currentPriority': return (p.currentPriority || '').toLowerCase();
+      case 'estimatedMinutes': return p.estimatedMinutes != null ? p.estimatedMinutes : -1;
+      case 'actualMinutes': return dinGetActualMin(p) != null ? dinGetActualMin(p) : -1;
+      case 'variance': return dinGetVariance(p) != null ? dinGetVariance(p) : -99999;
+      case 'usedPIA': return p.usedPIA ? 1 : 0;
+      case 'predictionScore': return p.predictionScore;
+      case 'isQuickHitter': return p.isQuickHitter ? 1 : 0;
+      default: return 0;
+    }
+  }
+
+  function dinFilterPredictions(list, filter) {
+    switch (filter) {
+      case 'has_time': return list.filter(p => p.workedHours > 0);
+      case 'no_time': return list.filter(p => !p.workedHours || p.workedHours === 0);
+      case 'pia': return list.filter(p => p.usedPIA);
+      case 'quick_hitter': return list.filter(p => p.isQuickHitter);
+      default: return list;
+    }
+  }
+
+  function renderDINPredRows() {
+    predTbody.innerHTML = '';
+    const filter = $('#din-status-filter').value;
+    let filtered = dinFilterPredictions([...predictions], filter);
+
+    filtered.sort((a, b) => {
+      const av = dinSortVal(a, dinSortKey);
+      const bv = dinSortVal(b, dinSortKey);
+      if (av < bv) return dinSortAsc ? -1 : 1;
+      if (av > bv) return dinSortAsc ? 1 : -1;
+      return 0;
+    });
+
+    if (filtered.length === 0) {
+      predTbody.innerHTML = '<tr><td colspan="12" class="empty-state-text">No matching predictions</td></tr>';
+      return;
+    }
+
+    for (const p of filtered) {
+      const scoreClass = p.predictionScore >= 70 ? 'qh-cell-bad' : p.predictionScore >= 50 ? 'qh-cell-warn' : '';
+      const estMin = p.estimatedMinutes != null ? p.estimatedMinutes : '—';
+      const actualMin = dinGetActualMin(p);
+      const actualStr = actualMin != null ? actualMin : '—';
+      const variance = dinGetVariance(p);
+      const varianceStr = variance != null ? (variance > 0 ? '+' + variance : '' + variance) : '—';
+      const varianceClass = variance != null ? (variance > 0 ? 'time-over' : 'time-under') : '';
+      predTbody.innerHTML += `
+        <tr data-ticket-id="${p.ticketId}">
+          <td class="qh-check-col" onclick="event.stopPropagation()"><input type="checkbox" class="din-row-check" data-ticket-id="${p.ticketId}" /></td>
+          <td onclick="openTicketDetail('${p.ticketId}')" style="cursor:pointer">#${p.ticketNumber || p.ticketId}</td>
+          <td onclick="openTicketDetail('${p.ticketId}')" style="cursor:pointer" title="${escHtml(p.title)}">${escHtml((p.title || '').slice(0, 50))}${(p.title || '').length > 50 ? '...' : ''}</td>
+          <td>${escHtml(p.companyName)}</td>
+          <td>${escHtml(p.issueType)}</td>
+          <td>${escHtml(p.currentPriority)}</td>
+          <td>${estMin}</td>
+          <td>${actualStr}</td>
+          <td class="${varianceClass}">${varianceStr}</td>
+          <td>${p.usedPIA ? '<span class="badge badge-pia">Yes</span>' : 'No'}</td>
+          <td><span class="${scoreClass}">${p.predictionScore}</span></td>
+          <td>${p.isQuickHitter ? '<span class="badge badge-accurate">Yes</span>' : 'No'}</td>
+        </tr>`;
+    }
+  }
+
+  // Update sort indicators on headers
+  function dinUpdateSortHeaders() {
+    document.querySelectorAll('#din-predictions-table thead th.sortable').forEach(th => {
+      th.classList.remove('sort-asc', 'sort-desc');
+      if (th.dataset.sort === dinSortKey) {
+        th.classList.add(dinSortAsc ? 'sort-asc' : 'sort-desc');
+      }
+    });
+  }
+
+  // Column header click to sort
+  document.querySelectorAll('#din-predictions-table thead th.sortable').forEach(th => {
+    th.style.cursor = 'pointer';
+    th.addEventListener('click', () => {
+      const key = th.dataset.sort;
+      if (dinSortKey === key) {
+        dinSortAsc = !dinSortAsc;
+      } else {
+        dinSortKey = key;
+        dinSortAsc = true;
+      }
+      dinUpdateSortHeaders();
+      renderDINPredRows();
+    });
+  });
+
+  // Filter dropdown
+  $('#din-status-filter').onchange = () => {
+    renderDINPredRows();
+    updateDINSelectedCount();
+  };
+
+  // Populate priority dropdown
+  const dinPrioritySelect = $('#din-priority-select');
+  dinPrioritySelect.innerHTML = '<option value="">Set Priority To...</option>';
+  for (const [val, label] of Object.entries(currentPriorityMap)) {
+    dinPrioritySelect.innerHTML += `<option value="${val}">${escHtml(label)}</option>`;
+  }
+
+  // Initial render
+  dinUpdateSortHeaders();
+  renderDINPredRows();
+
+  // Select-all checkbox
+  const dinCheckAll = $('#din-check-all');
+  dinCheckAll.onchange = () => {
+    predTbody.querySelectorAll('.din-row-check').forEach(cb => { cb.checked = dinCheckAll.checked; });
+    updateDINSelectedCount();
+  };
+
+  // "Select All Visible" button
+  $('#din-select-all').onclick = () => {
+    predTbody.querySelectorAll('.din-row-check').forEach(cb => { cb.checked = true; });
+    updateDINSelectedCount();
+  };
+
+  // Individual checkbox change
+  predTbody.addEventListener('change', (e) => {
+    if (e.target.classList.contains('din-row-check')) updateDINSelectedCount();
+  });
+
+  // Set priority button — use selected priority from dropdown
+  const dinBtn = $('#din-set-priority-btn');
+  dinBtn.onclick = () => {
+    const selectedPriority = dinPrioritySelect.value;
+    const selectedLabel = dinPrioritySelect.options[dinPrioritySelect.selectedIndex]?.text || '';
+    if (!selectedPriority) {
+      dinUpdatePriority(predTbody, dinAnalysis.doItNowPriorityValue, dinAnalysis.doItNowLabel);
+    } else {
+      dinUpdatePriority(predTbody, Number(selectedPriority), selectedLabel);
+    }
+  };
+
+  // Correlation table
+  renderDoItNowCorrelation(dinAnalysis.correlation);
+}
+
+function drillIntoIssueType(issueType, dinPriorityValue) {
+  // Match tickets by issue type label (same logic as ticket-analyzer.js)
+  const matched = allTickets.filter(t => {
+    const itLabel = t.issueTypeName
+      ? (t.subIssueTypeName ? `${t.issueTypeName} / ${t.subIssueTypeName}` : t.issueTypeName)
+      : (t.categoryLabel || 'Uncategorized');
+    return itLabel === issueType;
+  });
+
+  if (matched.length === 0) {
+    showToast(`No tickets found for "${issueType}"`);
+    return;
+  }
+
+  // Sort: Do It Now tickets first, then by status (open before closed), then by automation score
+  matched.sort((a, b) => {
+    const aIsDIN = a.priority === dinPriorityValue ? 1 : 0;
+    const bIsDIN = b.priority === dinPriorityValue ? 1 : 0;
+    if (bIsDIN !== aIsDIN) return bIsDIN - aIsDIN;
+    const aComplete = (a.status === 5 || a.status === 'Complete') ? 1 : 0;
+    const bComplete = (b.status === 5 || b.status === 'Complete') ? 1 : 0;
+    if (aComplete !== bComplete) return aComplete - bComplete;
+    return b.automationScore - a.automationScore;
+  });
+
+  const html = matched.map(t => {
+    const pLabel = currentPriorityMap[t.priority] || '';
+    const pClass = pLabel ? `badge-priority-${pLabel.toLowerCase().replace(/\s+/g, '-')}` : '';
+    const isComplete = t.status === 5 || t.status === 'Complete';
+    const statusBadge = isComplete
+      ? '<span class="badge badge-accurate">Completed</span>'
+      : '<span class="badge badge-inaccurate">Open</span>';
+    const piaBadge = t.usedPIA ? '<span class="badge badge-pia-sm">PIA</span>' : '';
+    const scoreClass = t.automationScore >= 80 ? 'high' : t.automationScore >= 50 ? 'medium' : 'low';
+    const worked = (t.workedHours || 0) > 0 ? `${t.workedHours.toFixed(1)}h worked` : 'No time logged';
+
+    return `
+      <div class="ticket-card" onclick="closeIssueDrill(); openTicketDetail('${t.ticketId}')" style="cursor:pointer;">
+        <div class="ticket-header">
+          <span class="ticket-title">${escHtml(t.title)}</span>
+          <span class="ticket-id">#${t.ticketNumber || t.ticketId}</span>
+        </div>
+        <div class="ticket-meta">
+          ${pLabel ? `<span class="badge ${pClass}">${pLabel}</span>` : ''}
+          ${statusBadge}
+          ${piaBadge}
+          ${t.isQuickHitter ? '<span class="badge badge-quick">Quick Hitter</span>' : ''}
+          ${t.estimatedMinutes ? `<span class="badge badge-time">~${t.estimatedMinutes} min</span>` : ''}
+          <span class="badge" style="background:var(--surface-2);color:var(--text-dim)">${worked}</span>
+          ${t.companyName ? `<span class="badge" style="background:var(--surface-2);color:var(--text-dim)">${escHtml(t.companyName)}</span>` : ''}
+          <div class="score-bar">
+            Auto:
+            <div class="score-track">
+              <div class="score-fill ${scoreClass}" style="width: ${t.automationScore}%"></div>
+            </div>
+            ${t.automationScore}%
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+
+  const dinCount = matched.filter(t => t.priority === dinPriorityValue).length;
+  const completedCount = matched.filter(t => t.status === 5 || t.status === 'Complete').length;
+  const piaCount = matched.filter(t => t.usedPIA).length;
+
+  const overlay = document.createElement('div');
+  overlay.id = 'issue-drill-overlay';
+  overlay.className = 'modal-overlay active';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width: 850px; max-height: 85vh; overflow-y: auto;">
+      <div class="modal-header">
+        <h2>${escHtml(issueType)}</h2>
+        <button class="modal-close" onclick="closeIssueDrill()">&times;</button>
+      </div>
+      <div style="padding: 0 20px 8px; display:flex; gap:0.6rem; flex-wrap:wrap;">
+        <span class="badge badge-category">${matched.length} tickets</span>
+        <span class="badge badge-priority-critical">${dinCount} Do It Now</span>
+        <span class="badge badge-accurate">${completedCount} completed</span>
+        <span class="badge badge-inaccurate">${matched.length - completedCount} open</span>
+        ${piaCount > 0 ? `<span class="badge badge-pia-sm">${piaCount} PIA</span>` : ''}
+      </div>
+      <div class="modal-body" style="padding: 12px 20px 20px;">
+        ${html}
+      </div>
+    </div>`;
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) closeIssueDrill();
+  });
+  document.body.appendChild(overlay);
+}
+
+function closeIssueDrill() {
+  const overlay = document.getElementById('issue-drill-overlay');
+  if (overlay) overlay.remove();
+}
+
+function renderDoItNowCorrelation(corr) {
+  const tbody = document.querySelector('#din-correlation-table tbody');
+  const tfoot = document.querySelector('#din-correlation-table tfoot');
+  const detail = document.getElementById('din-correlation-detail');
+  if (!tbody || !corr) return;
+
+  tbody.innerHTML = '';
+  tfoot.innerHTML = '';
+
+  const buckets = corr.buckets || [];
+  if (buckets.length === 0 || corr.totalDIN === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" class="empty-state-text">No Do It Now tickets to correlate</td></tr>';
+    if (detail) detail.innerHTML = '';
+    return;
+  }
+
+  // Totals for the footer
+  let totCompleted = 0, totCompletedPIA = 0, totOpen = 0, totOpenPIA = 0;
+
+  for (const b of buckets) {
+    const total = b.completed + b.open;
+    if (total === 0) continue;
+    const completionPct = total > 0 ? Math.round((b.completed / total) * 100) : 0;
+    const piaPct = total > 0 ? Math.round(((b.completedPIA + b.openPIA) / total) * 100) : 0;
+
+    totCompleted += b.completed;
+    totCompletedPIA += b.completedPIA;
+    totOpen += b.open;
+    totOpenPIA += b.openPIA;
+
+    const completionClass = completionPct >= 75 ? 'qh-cell-good' : completionPct >= 40 ? 'qh-cell-warn' : 'qh-cell-bad';
+    const piaClass = piaPct >= 50 ? 'qh-cell-good' : piaPct >= 20 ? 'qh-cell-warn' : '';
+
+    tbody.innerHTML += `
+      <tr class="din-corr-row" data-bucket="${escHtml(b.range)}" style="cursor:pointer" title="Click to see tickets">
+        <td><strong>${escHtml(b.range)}</strong></td>
+        <td>${b.completed}</td>
+        <td>${b.completedPIA > 0 ? `<span class="badge badge-pia-sm">${b.completedPIA}</span>` : '0'}</td>
+        <td>${b.open > 0 ? `<span class="din-open-count">${b.open}</span>` : '0'}</td>
+        <td>${b.openPIA > 0 ? `<span class="badge badge-pia-sm">${b.openPIA}</span>` : '0'}</td>
+        <td>${total}</td>
+        <td><span class="${completionClass}">${completionPct}%</span></td>
+        <td><span class="${piaClass}">${piaPct}%</span></td>
+      </tr>`;
+  }
+
+  // Footer totals
+  const grandTotal = totCompleted + totOpen;
+  const grandCompPct = grandTotal > 0 ? Math.round((totCompleted / grandTotal) * 100) : 0;
+  const grandPiaPct = grandTotal > 0 ? Math.round(((totCompletedPIA + totOpenPIA) / grandTotal) * 100) : 0;
+  tfoot.innerHTML = `
+    <tr class="din-corr-footer">
+      <td><strong>Totals</strong></td>
+      <td><strong>${totCompleted}</strong></td>
+      <td><strong>${totCompletedPIA}</strong></td>
+      <td><strong>${totOpen}</strong></td>
+      <td><strong>${totOpenPIA}</strong></td>
+      <td><strong>${grandTotal}</strong></td>
+      <td><strong>${grandCompPct}%</strong></td>
+      <td><strong>${grandPiaPct}%</strong></td>
+    </tr>`;
+
+  // Click row to expand ticket detail
+  tbody.querySelectorAll('.din-corr-row').forEach(row => {
+    row.addEventListener('click', () => {
+      const bucket = row.dataset.bucket;
+      const tickets = (corr.tickets || []).filter(t => t.timeBucket === bucket);
+      renderCorrelationDrilldown(detail, bucket, tickets);
+    });
+  });
+}
+
+function renderCorrelationDrilldown(container, bucket, tickets) {
+  if (!container) return;
+  if (tickets.length === 0) {
+    container.innerHTML = `<p class="empty-state-text">No tickets in ${escHtml(bucket)}</p>`;
     return;
   }
 
   container.innerHTML = `
-    <div class="roi-card">
-      <div class="roi-number">${roi.totalMinutesInBatch}</div>
-      <div class="roi-label">Total Minutes in Batch</div>
-    </div>
-    <div class="roi-card">
-      <div class="roi-number">${roi.automatableMinutes}</div>
-      <div class="roi-label">Automatable Minutes</div>
-    </div>
-    <div class="roi-card">
-      <div class="roi-number">${roi.monthlySavingsHours}h</div>
-      <div class="roi-label">Monthly Hours Saved</div>
-    </div>
-    <div class="roi-card">
-      <div class="roi-number">${roi.annualSavingsHours}h</div>
-      <div class="roi-label">Annual Hours Saved</div>
-    </div>
-    <div class="roi-card roi-highlight">
-      <div class="roi-number">$${roi.annualCostSavings.toLocaleString()}</div>
-      <div class="roi-label">Annual Cost Savings</div>
-    </div>
-    <div class="roi-card">
-      <div class="roi-number">$${roi.hourlyRateUsed}/hr</div>
-      <div class="roi-label">Rate Used</div>
-    </div>
-  `;
+    <div class="din-corr-drilldown">
+      <h4>${escHtml(bucket)} — ${tickets.length} Ticket${tickets.length !== 1 ? 's' : ''}</h4>
+      <table class="data-table din-corr-detail-table">
+        <thead>
+          <tr>
+            <th>Ticket #</th>
+            <th>Title</th>
+            <th>Client</th>
+            <th>Issue Type</th>
+            <th>Est. Min</th>
+            <th>Worked Hrs</th>
+            <th>Status</th>
+            <th>PIA</th>
+            <th>Auto Score</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tickets.map(t => {
+            const statusBadge = t.isCompleted
+              ? '<span class="badge badge-accurate">Completed</span>'
+              : '<span class="badge badge-inaccurate">Open</span>';
+            const piaBadge = t.usedPIA
+              ? '<span class="badge badge-pia-sm">PIA</span>'
+              : '<span class="din-no-pia">—</span>';
+            const scoreClass = t.automationScore >= 80 ? 'qh-cell-good' : t.automationScore >= 50 ? 'qh-cell-warn' : '';
+            return `
+            <tr onclick="openTicketDetail('${t.ticketId}')" style="cursor:pointer">
+              <td>#${t.ticketNumber || t.ticketId}</td>
+              <td title="${escHtml(t.title)}">${escHtml((t.title || '').slice(0, 45))}${(t.title || '').length > 45 ? '...' : ''}</td>
+              <td>${escHtml(t.companyName)}</td>
+              <td>${escHtml(t.issueType)}</td>
+              <td>${t.estimatedMinutes}</td>
+              <td>${t.workedHours > 0 ? t.workedHours.toFixed(1) : '<span class="din-open-count">0</span>'}</td>
+              <td>${statusBadge}</td>
+              <td>${piaBadge}</td>
+              <td><span class="${scoreClass}">${t.automationScore}%</span></td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+function updateDINSelectedCount() {
+  const checked = document.querySelectorAll('#din-predictions-table tbody .din-row-check:checked');
+  const label = $('#din-selected-count');
+  const btn = $('#din-set-priority-btn');
+  label.textContent = checked.length > 0 ? `${checked.length} selected` : '';
+  btn.disabled = checked.length === 0;
+}
+
+async function dinUpdatePriority(tbody, priorityValue, priorityLabel) {
+  const checked = tbody.querySelectorAll('.din-row-check:checked');
+  const ticketIds = Array.from(checked).map(cb => Number(cb.dataset.ticketId)).filter(Boolean);
+  if (ticketIds.length === 0) return;
+
+  const btn = $('#din-set-priority-btn');
+  btn.disabled = true;
+  btn.textContent = `Updating ${ticketIds.length}...`;
+
+  try {
+    const resp = await fetch('/api/tickets/update-priority', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ticketIds, priority: priorityValue }),
+    });
+    const result = await resp.json();
+
+    if (!resp.ok) throw new Error(result.error || 'Update failed');
+
+    const msg = `Updated ${result.updated.length} ticket(s) to "${priorityLabel}"` +
+      (result.failed.length > 0 ? ` (${result.failed.length} failed)` : '');
+
+    for (const id of result.updated) {
+      const row = tbody.querySelector(`tr[data-ticket-id="${id}"]`);
+      if (row) {
+        row.classList.add('qh-row-updated');
+        row.querySelector('.din-row-check').checked = false;
+      }
+    }
+    updateDINSelectedCount();
+    btn.textContent = msg;
+    setTimeout(() => { btn.textContent = 'Set Selected to Do It Now'; }, 4000);
+  } catch (err) {
+    btn.textContent = `Error: ${err.message}`;
+    setTimeout(() => { btn.textContent = 'Set Selected to Do It Now'; btn.disabled = false; }, 4000);
+  }
 }
 
 // ── Render Tickets ──
@@ -529,23 +1677,30 @@ function renderTickets(tickets) {
       `<button class="script-btn" onclick="event.stopPropagation(); viewScript('${s.type}', '${s.name}')">${s.label}</button>`
     ).join('');
 
-    const priorityMap = { 1: 'Critical', 2: 'High', 3: 'Medium', 4: 'Low' };
-    const priorityLabel = priorityMap[t.priority] || '';
+    const priorityLabel = currentPriorityMap[t.priority] || '';
     const priorityClass = priorityLabel ? `badge-priority-${priorityLabel.toLowerCase()}` : '';
 
     const readinessClass = t.automationReadiness || 'manual';
     const resourceName = getResourceName(t.assignedResourceID);
+    const ai = t.aiInsights;
+    const catClass = 'cat-' + (t.category || 'general_support').toLowerCase().replace(/[\s\/]+/g, '_');
 
     return `
-      <div class="ticket-card ${t.isQuickHitter ? 'quick-hitter' : ''}" onclick="openTicketDetail('${t.ticketId}')">
+      <div class="ticket-card ${catClass} ${t.isQuickHitter ? 'quick-hitter' : ''}" onclick="openTicketDetail('${t.ticketId}')">
         <div class="ticket-header">
           <span class="ticket-title">${escHtml(t.title)}</span>
           <span class="ticket-id">#${t.ticketNumber || t.ticketId}</span>
         </div>
         <div class="ticket-meta">
           <span class="badge badge-category">${t.categoryLabel}</span>
+          ${ai ? '<span class="badge badge-ai">AI</span>' : ''}
+          ${ai && ai.sentiment ? `<span class="badge badge-sentiment badge-sentiment-${ai.sentiment.level}" title="Urgency: ${ai.sentiment.urgency}/5">${ai.sentiment.level}</span>` : ''}
+          ${ai && ai.sentiment && ai.sentiment.businessImpact ? `<span class="badge badge-impact badge-impact-${ai.sentiment.businessImpact}">${ai.sentiment.businessImpact}</span>` : ''}
+          ${ai && ai.sentiment && ai.sentiment.needsFollowUp ? '<span class="badge badge-followup">Needs Follow-Up</span>' : ''}
+          ${ai && ai.categoryChanged ? `<span class="badge badge-ai-reclassified" title="AI reclassified from ${escHtml(ai.originalCategory)}">Reclassified</span>` : ''}
+          ${ai && ai.escalation ? '<span class="badge badge-escalate">Escalate</span>' : ''}
           <span class="badge badge-readiness badge-readiness-${readinessClass}">${t.automationReadinessLabel || 'Manual'}</span>
-          ${t.isQuickHitter ? '<span class="badge badge-quick">Quick Hitter</span>' : ''}
+          ${ai && ai.quickHitter && ai.quickHitter.isQuickWin ? `<span class="badge badge-quick">Quick Win ~${ai.quickHitter.estimatedMinutes || '?'}m</span>` : (t.isQuickHitter ? '<span class="badge badge-quick">Quick Hitter</span>' : '')}
           ${t.estimatedMinutes ? `<span class="badge badge-time">~${t.estimatedMinutes} min</span>` : ''}
           ${t.workedHours > 0 ? `<span class="badge badge-worked">${t.workedHours.toFixed(2)}h worked</span>` : ''}
           ${resourceName ? `<span class="badge badge-tech">${escHtml(resourceName)}</span>` : ''}
@@ -558,17 +1713,86 @@ function renderTickets(tickets) {
             ${t.automationScore}%
           </div>
         </div>
+        ${ai && ai.suggestedResolution ? `<div class="ticket-ai-resolution">${escHtml(ai.suggestedResolution)}</div>` : ''}
+        ${scripts ? `<div class="ticket-scripts">${scripts}</div>` : ''}
+      </div>`;
+  }).join('');
+}
+
+// ── Render Tickets inside AI Insights tab ──
+function renderAITickets(tickets) {
+  const container = $('#ai-tickets');
+  const countLabel = $('#ai-ticket-count-label');
+  const wrapper = $('#ai-ticket-list');
+
+  if (!tickets.length) {
+    wrapper.style.display = 'none';
+    return;
+  }
+
+  wrapper.style.display = '';
+  const visibleCount = allTickets.filter(t => t.category !== 'uncategorized' && t.categoryLabel !== 'Needs Review').length;
+  countLabel.textContent = `Showing ${tickets.length} of ${visibleCount}`;
+
+  container.innerHTML = tickets.map(t => {
+    const scoreClass = t.automationScore >= 80 ? 'high' : t.automationScore >= 50 ? 'medium' : 'low';
+    const scripts = (t.suggestedScripts || []).map(s =>
+      `<button class="script-btn" onclick="event.stopPropagation(); viewScript('${s.type}', '${s.name}')">${s.label}</button>`
+    ).join('');
+
+    const priorityLabel = currentPriorityMap[t.priority] || '';
+    const priorityClass = priorityLabel ? `badge-priority-${priorityLabel.toLowerCase()}` : '';
+
+    const readinessClass = t.automationReadiness || 'manual';
+    const resourceName = getResourceName(t.assignedResourceID);
+    const ai = t.aiInsights;
+    const catClass = 'cat-' + (t.category || 'general_support').toLowerCase().replace(/[\s\/]+/g, '_');
+
+    return `
+      <div class="ticket-card ${catClass} ${t.isQuickHitter ? 'quick-hitter' : ''}" onclick="openTicketDetail('${t.ticketId}')">
+        <div class="ticket-header">
+          <span class="ticket-title">${escHtml(t.title)}</span>
+          <span class="ticket-id">#${t.ticketNumber || t.ticketId}</span>
+        </div>
+        <div class="ticket-meta">
+          <span class="badge badge-category">${t.categoryLabel}</span>
+          ${ai ? '<span class="badge badge-ai">AI</span>' : ''}
+          ${ai && ai.sentiment ? `<span class="badge badge-sentiment badge-sentiment-${ai.sentiment.level}" title="Urgency: ${ai.sentiment.urgency}/5">${ai.sentiment.level}</span>` : ''}
+          ${ai && ai.sentiment && ai.sentiment.businessImpact ? `<span class="badge badge-impact badge-impact-${ai.sentiment.businessImpact}">${ai.sentiment.businessImpact}</span>` : ''}
+          ${ai && ai.sentiment && ai.sentiment.needsFollowUp ? '<span class="badge badge-followup">Needs Follow-Up</span>' : ''}
+          ${ai && ai.categoryChanged ? `<span class="badge badge-ai-reclassified" title="AI reclassified from ${escHtml(ai.originalCategory)}">Reclassified</span>` : ''}
+          ${ai && ai.escalation ? '<span class="badge badge-escalate">Escalate</span>' : ''}
+          <span class="badge badge-readiness badge-readiness-${readinessClass}">${t.automationReadinessLabel || 'Manual'}</span>
+          ${ai && ai.quickHitter && ai.quickHitter.isQuickWin ? `<span class="badge badge-quick">Quick Win ~${ai.quickHitter.estimatedMinutes || '?'}m</span>` : (t.isQuickHitter ? '<span class="badge badge-quick">Quick Hitter</span>' : '')}
+          ${t.estimatedMinutes ? `<span class="badge badge-time">~${t.estimatedMinutes} min</span>` : ''}
+          ${t.workedHours > 0 ? `<span class="badge badge-worked">${t.workedHours.toFixed(2)}h worked</span>` : ''}
+          ${resourceName ? `<span class="badge badge-tech">${escHtml(resourceName)}</span>` : ''}
+          ${priorityLabel ? `<span class="badge ${priorityClass}">${priorityLabel}</span>` : ''}
+          <div class="score-bar">
+            Auto:
+            <div class="score-track">
+              <div class="score-fill ${scoreClass}" style="width: ${t.automationScore}%"></div>
+            </div>
+            ${t.automationScore}%
+          </div>
+        </div>
+        ${ai && ai.suggestedResolution ? `<div class="ticket-ai-resolution">${escHtml(ai.suggestedResolution)}</div>` : ''}
         ${scripts ? `<div class="ticket-scripts">${scripts}</div>` : ''}
       </div>`;
   }).join('');
 }
 
 function showEmptyState() {
-  ticketsContainer.innerHTML = `
-    <div class="empty-state">
-      <h3>No tickets loaded</h3>
-      <p>Click "Fetch Tickets" to pull live data, or "Load Demo Tickets" to see sample data.</p>
-    </div>`;
+  const aiContainer = $('#ai-tickets');
+  const wrapper = $('#ai-ticket-list');
+  if (wrapper) wrapper.style.display = '';
+  if (aiContainer) {
+    aiContainer.innerHTML = `
+      <div class="empty-state">
+        <h3>No tickets loaded</h3>
+        <p>Click "Fetch Tickets" to pull live data, or "Load Demo Tickets" to see sample data.</p>
+      </div>`;
+  }
 }
 
 // ── Script Viewer ──
@@ -641,7 +1865,9 @@ async function browseScripts() {
 
 // ── Filtering & Sorting ──
 function applyFilters() {
-  let filtered = [...allTickets];
+  // Always exclude "Needs Review" / uncategorized tickets
+  let filtered = allTickets.filter(t => t.category !== 'uncategorized' && t.categoryLabel !== 'Needs Review');
+
   const category = $('#filter-category').value;
   const sort = $('#sort-by').value;
 
@@ -665,7 +1891,9 @@ function applyFilters() {
     filtered.sort((a, b) => b.automationScore - a.automationScore);
   }
 
-  renderTickets(filtered);
+  // Always render tickets inside the AI Insights tab (standalone section is hidden)
+  $('#ticket-list').style.display = 'none';
+  renderAITickets(filtered);
 }
 
 // ── Tab Switching ──
@@ -679,6 +1907,19 @@ function setupTabs() {
       btn.classList.add('active');
       const tabId = btn.getAttribute('data-tab');
       document.getElementById(tabId).classList.add('active');
+    });
+  });
+
+  // Sub-tab switching inside AI & Tickets
+  const subTabBtns = document.querySelectorAll('.sub-tab-btn');
+  subTabBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      subTabBtns.forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.sub-tab-panel').forEach(p => p.classList.remove('active'));
+
+      btn.classList.add('active');
+      const subId = btn.getAttribute('data-subtab');
+      document.getElementById(subId).classList.add('active');
     });
   });
 }
@@ -711,8 +1952,7 @@ function openTicketDetail(ticketId) {
   const t = allTickets.find(tk => String(tk.ticketId) === String(ticketId));
   if (!t) return;
 
-  const priorityMap = { 1: 'Critical', 2: 'High', 3: 'Medium', 4: 'Low' };
-  const priorityLabel = priorityMap[t.priority] || 'Unknown';
+  const priorityLabel = currentPriorityMap[t.priority] || 'Unknown';
   const priorityClass = priorityLabel ? `badge-priority-${priorityLabel.toLowerCase()}` : '';
   const scoreClass = t.automationScore >= 80 ? 'high' : t.automationScore >= 50 ? 'medium' : 'low';
   const readinessClass = t.automationReadiness || 'manual';
@@ -825,6 +2065,94 @@ function openTicketDetail(ticketId) {
         </div>
       ` : ''}
 
+      ${t.aiInsights ? `
+        <div class="detail-section detail-ai-section">
+          <h4>AI Analysis <span class="badge badge-ai">Claude</span> <span class="ai-confidence-label">${t.aiInsights.confidence}% confidence</span></h4>
+          ${t.aiInsights.categoryChanged ? `<p class="ai-reclassified-note">AI reclassified this ticket from <strong>${escHtml(t.aiInsights.originalCategory)}</strong> to <strong>${escHtml(t.aiInsights.categoryLabel)}</strong></p>` : ''}
+          ${t.aiInsights.suggestedResolution ? `
+            <div class="ai-field">
+              <div class="ai-field-label">Suggested Resolution</div>
+              <p>${escHtml(t.aiInsights.suggestedResolution)}</p>
+            </div>
+          ` : ''}
+          ${t.aiInsights.rootCause ? `
+            <div class="ai-field">
+              <div class="ai-field-label">Likely Root Cause</div>
+              <p>${escHtml(t.aiInsights.rootCause)}</p>
+            </div>
+          ` : ''}
+          ${t.aiInsights.escalation ? `
+            <div class="ai-escalation-warning">
+              <strong>Escalation Recommended</strong> — AI suggests this ticket needs L2/L3 attention.
+            </div>
+          ` : ''}
+          ${t.aiInsights.recommendedScripts && t.aiInsights.recommendedScripts.length ? `
+            <div class="ai-field">
+              <div class="ai-field-label">AI-Recommended Scripts</div>
+              <p>${t.aiInsights.recommendedScripts.map(s => `<code>${escHtml(s)}</code>`).join(' ')}</p>
+              ${t.aiInsights.scriptReasoning ? `<p class="ai-script-reasoning">${escHtml(t.aiInsights.scriptReasoning)}</p>` : ''}
+            </div>
+          ` : `
+            ${t.aiInsights.scriptReasoning ? `
+              <div class="ai-field">
+                <div class="ai-field-label">Script Assessment</div>
+                <p class="ai-script-reasoning">${escHtml(t.aiInsights.scriptReasoning)}</p>
+              </div>
+            ` : ''}
+          `}
+          ${t.aiInsights.quickHitter ? `
+            <div class="ai-field ai-quickhitter-field">
+              <div class="ai-field-label">Quick Win Assessment</div>
+              <div class="ai-quickhitter-detail">
+                <span class="badge ${t.aiInsights.quickHitter.isQuickWin ? 'badge-quick-win' : 'badge-not-quick'}">${t.aiInsights.quickHitter.isQuickWin ? 'Quick Win (' + (t.aiInsights.quickHitter.estimatedMinutes || '?') + ' min)' : 'Not a Quick Win'}</span>
+              </div>
+              <p class="ai-quickhitter-justification">${escHtml(t.aiInsights.quickHitter.justification || '')}</p>
+              ${t.aiInsights.quickHitter.blockers && t.aiInsights.quickHitter.blockers.length ? `
+                <p class="ai-quickhitter-blockers">Potential blockers: ${t.aiInsights.quickHitter.blockers.map(b => `<span class="badge badge-blocker">${escHtml(b)}</span>`).join(' ')}</p>
+              ` : ''}
+            </div>
+          ` : ''}
+          ${t.aiInsights.sentiment ? `
+            <div class="ai-field ai-sentiment-field">
+              <div class="ai-field-label">Client Sentiment</div>
+              <div class="ai-sentiment-detail">
+                <span class="badge badge-sentiment badge-sentiment-${t.aiInsights.sentiment.level}">${t.aiInsights.sentiment.level}</span>
+                ${t.aiInsights.sentiment.businessImpact ? `<span class="badge badge-impact badge-impact-${t.aiInsights.sentiment.businessImpact}">${t.aiInsights.sentiment.businessImpact}</span>` : ''}
+                <span class="ai-urgency-bar">
+                  Urgency:
+                  ${[1,2,3,4,5].map(n => `<span class="ai-urgency-dot ${n <= t.aiInsights.sentiment.urgency ? 'ai-urgency-active' : ''}"></span>`).join('')}
+                  <span class="ai-urgency-num">${t.aiInsights.sentiment.urgency}/5</span>
+                </span>
+              </div>
+              ${t.aiInsights.sentiment.needsFollowUp ? `
+                <p class="ai-followup-alert">Needs proactive follow-up — client may be frustrated or waiting</p>
+              ` : ''}
+              ${t.aiInsights.sentiment.cues && t.aiInsights.sentiment.cues.length ? `
+                <p class="ai-sentiment-cues">Cues: ${t.aiInsights.sentiment.cues.map(c => `<em>"${escHtml(c)}"</em>`).join(', ')}</p>
+              ` : ''}
+            </div>
+          ` : ''}
+          ${t.aiInsights.automationSuggestion ? `
+            <div class="ai-field ai-auto-suggestion">
+              <div class="ai-field-label">Automation Suggestion</div>
+              <div class="ai-auto-suggestion-detail">
+                <span class="badge ${t.aiInsights.automationSuggestion.canAutomate ? 'badge-accurate' : 'badge-nodata'}">${t.aiInsights.automationSuggestion.canAutomate ? 'Can Automate' : 'Manual Only'}</span>
+                ${t.aiInsights.automationSuggestion.method && t.aiInsights.automationSuggestion.method !== 'none' ? `<span class="badge badge-pia">${escHtml(t.aiInsights.automationSuggestion.method.replace(/_/g, ' '))}</span>` : ''}
+                ${t.aiInsights.automationSuggestion.estimatedTimeSavedPerTicket ? `<span class="badge badge-quick-win">Saves ~${t.aiInsights.automationSuggestion.estimatedTimeSavedPerTicket} min/ticket</span>` : ''}
+              </div>
+              <p class="ai-auto-suggestion-desc">${escHtml(t.aiInsights.automationSuggestion.description || '')}</p>
+              ${t.aiInsights.automationSuggestion.estimatedSetupHours ? `<p class="ai-auto-suggestion-setup">Setup estimate: ~${t.aiInsights.automationSuggestion.estimatedSetupHours} hours</p>` : ''}
+            </div>
+          ` : ''}
+          ${t.aiInsights.reasoning ? `
+            <div class="ai-field ai-reasoning">
+              <div class="ai-field-label">Reasoning</div>
+              <p>${escHtml(t.aiInsights.reasoning)}</p>
+            </div>
+          ` : ''}
+        </div>
+      ` : ''}
+
       ${t.isQuickHitter && t.automationReadiness === 'auto_ready' ? `
         <div class="detail-quickwin-banner">
           <div class="quickwin-banner-icon">&#9889;</div>
@@ -845,86 +2173,7 @@ function closeDetailModal() {
   $('#detail-modal').classList.add('hidden');
 }
 
-// ── Quick Wins Tab ──
-function renderQuickWins() {
-  const quickWins = allTickets.filter(t => t.isQuickHitter && t.automationReadiness === 'auto_ready');
-  const semiAuto = allTickets.filter(t => t.isQuickHitter && t.automationReadiness === 'semi_auto');
-  const manualQuick = allTickets.filter(t => t.isQuickHitter && (t.automationReadiness === 'manual' || t.automationReadiness === 'script_assist'));
-
-  const totalMinSaved = quickWins.reduce((s, t) => s + (t.estimatedMinutes || 0), 0);
-
-  const summaryContainer = $('#quickwins-summary');
-  summaryContainer.innerHTML = `
-    <div class="qw-stat-row">
-      <div class="qw-stat">
-        <div class="qw-stat-number qw-green">${quickWins.length}</div>
-        <div class="qw-stat-label">Auto-Ready Quick Wins</div>
-      </div>
-      <div class="qw-stat">
-        <div class="qw-stat-number qw-yellow">${semiAuto.length}</div>
-        <div class="qw-stat-label">Semi-Auto Quick Hits</div>
-      </div>
-      <div class="qw-stat">
-        <div class="qw-stat-number qw-dim">${manualQuick.length}</div>
-        <div class="qw-stat-label">Manual Quick Hits</div>
-      </div>
-      <div class="qw-stat">
-        <div class="qw-stat-number qw-green">${totalMinSaved} min</div>
-        <div class="qw-stat-label">Automatable Right Now</div>
-      </div>
-    </div>
-  `;
-
-  // Group quick wins by category
-  const listContainer = $('#quickwins-list');
-  if (quickWins.length === 0) {
-    listContainer.innerHTML = '<div class="empty-state"><p>No auto-ready quick wins found in this batch. Try loading more tickets.</p></div>';
-    return;
-  }
-
-  const byCategory = {};
-  for (const t of quickWins) {
-    if (!byCategory[t.categoryLabel]) {
-      byCategory[t.categoryLabel] = { tickets: [], scripts: t.suggestedScripts, avgMinutes: t.estimatedMinutes, automationScore: t.automationScore };
-    }
-    byCategory[t.categoryLabel].tickets.push(t);
-  }
-
-  const sorted = Object.entries(byCategory).sort((a, b) => b[1].tickets.length - a[1].tickets.length);
-
-  listContainer.innerHTML = sorted.map(([category, data]) => {
-    const totalMin = data.tickets.length * data.avgMinutes;
-    const scriptBtns = (data.scripts || []).map(s =>
-      `<button class="script-btn" onclick="event.stopPropagation(); viewScript('${s.type}', '${s.name}')">${s.label}</button>`
-    ).join('');
-
-    const ticketRows = data.tickets.map(t => `
-      <div class="qw-ticket-row" onclick="openTicketDetail('${t.ticketId}')">
-        <span class="qw-ticket-title">${escHtml(t.title)}</span>
-        <span class="qw-ticket-id">#${t.ticketNumber || t.ticketId}</span>
-        <span class="badge badge-time">~${t.estimatedMinutes} min</span>
-      </div>
-    `).join('');
-
-    return `
-      <div class="qw-category-group">
-        <div class="qw-category-header">
-          <div class="qw-category-info">
-            <span class="qw-category-name">${category}</span>
-            <span class="qw-category-count">${data.tickets.length} ticket${data.tickets.length > 1 ? 's' : ''}</span>
-            <span class="badge badge-readiness badge-readiness-auto_ready">Auto-Ready</span>
-          </div>
-          <div class="qw-category-stats">
-            <span class="qw-save-total">${totalMin} min saveable</span>
-            <span class="qw-auto-score">Auto: ${data.automationScore}%</span>
-          </div>
-        </div>
-        <div class="qw-category-scripts">${scriptBtns}</div>
-        <div class="qw-tickets">${ticketRows}</div>
-      </div>
-    `;
-  }).join('');
-}
+// (Quick Wins tab removed)
 
 // ── SDE Metrics ──
 
@@ -1006,6 +2255,130 @@ function renderReconciliation(allReactiveTickets, allMACTickets, reactiveReceive
       </div>
     </details>
   `;
+}
+
+// ── Client Tab ──
+
+function renderClients() {
+  const tbody = $('#client-summary-table tbody');
+  tbody.innerHTML = '';
+
+  // Aggregate per-client stats from allTickets
+  const clientMap = {};
+  for (const t of allTickets) {
+    const name = t.companyName || 'Unknown';
+    if (!clientMap[name]) {
+      clientMap[name] = {
+        name,
+        tickets: [],
+        totalAutoScore: 0,
+        quickHitters: 0,
+        totalMinutes: 0,
+        issueTypes: {},
+      };
+    }
+    const c = clientMap[name];
+    c.tickets.push(t);
+    c.totalAutoScore += t.automationScore || 0;
+    if (t.isQuickHitter) c.quickHitters++;
+    c.totalMinutes += t.estimatedMinutes || 0;
+
+    const itLabel = t.issueTypeName
+      ? (t.subIssueTypeName ? `${t.issueTypeName} / ${t.subIssueTypeName}` : t.issueTypeName)
+      : (t.categoryLabel || 'Uncategorized');
+    c.issueTypes[itLabel] = (c.issueTypes[itLabel] || 0) + 1;
+  }
+
+  const clients = Object.values(clientMap).sort((a, b) => b.tickets.length - a.tickets.length);
+
+  // Search filter
+  const searchInput = $('#client-search');
+  searchInput.oninput = () => {
+    const q = searchInput.value.toLowerCase();
+    const rows = tbody.querySelectorAll('tr');
+    rows.forEach(row => {
+      const name = row.dataset.clientName || '';
+      row.style.display = name.toLowerCase().includes(q) ? '' : 'none';
+    });
+  };
+
+  for (const c of clients) {
+    const avgScore = c.tickets.length ? Math.round(c.totalAutoScore / c.tickets.length) : 0;
+    const topIssue = Object.entries(c.issueTypes).sort((a, b) => b[1] - a[1])[0];
+    const topIssueLabel = topIssue ? `${topIssue[0]} (${topIssue[1]})` : '—';
+
+    const tr = document.createElement('tr');
+    tr.dataset.clientName = c.name;
+    tr.style.cursor = 'pointer';
+    tr.innerHTML = `
+      <td>${escHtml(c.name)}</td>
+      <td>${c.tickets.length}</td>
+      <td>${avgScore}%</td>
+      <td>${escHtml(topIssueLabel)}</td>
+      <td>${c.quickHitters}</td>
+      <td>${c.totalMinutes}</td>`;
+    tr.addEventListener('click', () => showClientDetail(c));
+    tbody.appendChild(tr);
+  }
+}
+
+function showClientDetail(client) {
+  const panel = $('#client-detail-panel');
+  panel.style.display = 'block';
+  $('#client-detail-name').textContent = client.name;
+
+  // Stats summary
+  const avgScore = client.tickets.length ? Math.round(client.totalAutoScore / client.tickets.length) : 0;
+  const statsEl = $('#client-detail-stats');
+  statsEl.innerHTML = `
+    <div class="stat-row">
+      <span class="stat-item"><strong>${client.tickets.length}</strong> Tickets</span>
+      <span class="stat-item"><strong>${avgScore}%</strong> Avg Auto Score</span>
+      <span class="stat-item"><strong>${client.quickHitters}</strong> Quick Hitters</span>
+      <span class="stat-item"><strong>${client.totalMinutes}</strong> Min Saveable</span>
+    </div>`;
+
+  // Issue type breakdown bars
+  const issuesEl = $('#client-detail-issues');
+  issuesEl.innerHTML = '';
+  const sortedIssues = Object.entries(client.issueTypes).sort((a, b) => b[1] - a[1]);
+  const maxIssue = sortedIssues.length ? sortedIssues[0][1] : 1;
+  const colors = ['fill-primary', 'fill-green', 'fill-yellow', 'fill-orange', 'fill-purple', 'fill-cyan', 'fill-red'];
+  sortedIssues.forEach(([label, count], i) => {
+    const pct = maxIssue > 0 ? (count / maxIssue) * 100 : 0;
+    const color = colors[i % colors.length];
+    issuesEl.innerHTML += `
+      <div class="cat-bar-row">
+        <span class="cat-bar-label">${escHtml(label)}</span>
+        <div class="cat-bar-track">
+          <div class="cat-bar-fill ${color}" style="width: ${pct}%"></div>
+        </div>
+        <span class="cat-bar-count">${count}</span>
+      </div>`;
+  });
+
+  // Recent tickets table (up to 25)
+  const ticketTbody = $('#client-detail-tickets tbody');
+  ticketTbody.innerHTML = '';
+  const recent = client.tickets.slice(0, 25);
+  for (const t of recent) {
+    const itLabel = t.issueTypeName
+      ? (t.subIssueTypeName ? `${t.issueTypeName} / ${t.subIssueTypeName}` : t.issueTypeName)
+      : (t.categoryLabel || '—');
+    const pLabel = currentPriorityMap[t.priority] || `P${t.priority || '?'}`;
+    ticketTbody.innerHTML += `
+      <tr>
+        <td>${t.ticketNumber || t.ticketId || '—'}</td>
+        <td title="${escHtml(t.title || '')}">${escHtml((t.title || '').slice(0, 60))}${(t.title || '').length > 60 ? '…' : ''}</td>
+        <td>${escHtml(itLabel)}</td>
+        <td>${escHtml(pLabel)}</td>
+        <td>${t.automationScore || 0}%</td>
+        <td>${t.workedHours || 0}</td>
+      </tr>`;
+  }
+
+  // Scroll to detail
+  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function renderSDEMetrics() {
@@ -1448,6 +2821,7 @@ function escHtml(str) {
 // ── Event Listeners ──
 $('#btn-fetch').addEventListener('click', fetchTickets);
 $('#btn-demo').addEventListener('click', loadDemo);
+$('#btn-ai').addEventListener('click', runAIAnalysis);
 $('#btn-scripts').addEventListener('click', browseScripts);
 $('#modal-close').addEventListener('click', closeScriptModal);
 $('#btn-copy-script').addEventListener('click', copyScript);

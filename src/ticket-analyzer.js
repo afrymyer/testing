@@ -231,6 +231,47 @@ function scoreResolution(resolutionText) {
 }
 
 /**
+ * Detect whether PIA (Process Intelligent Automation) or Datto RMM
+ * automation was used to resolve a ticket.
+ *
+ * Primary detection: `piaDetectedInNotes` flag set by server.js after
+ * scanning internal ticket notes for the PIA API account name/resource.
+ * This is the authoritative source — when the PIA API account creates
+ * an internal note on a ticket, it means PIA acted on that ticket.
+ *
+ * Fallback: keyword scan of resolution/description text for automation
+ * platform indicators (less reliable, used when notes aren't available).
+ */
+const PIA_KEYWORD_INDICATORS = [
+  'pia', 'process intelligent automation', 'automated via',
+  'ran script', 'executed script', 'automation script', 'auto-remediated',
+  'auto remediated', 'script ran', 'script executed',
+  'datto rmm', 'rmm script', 'rmm job', 'component ran', 'datto job',
+  'automated fix', 'automated resolution', 'self-heal', 'auto-resolved',
+  'bulk action', 'pia portal',
+];
+
+function detectPIA(ticket) {
+  // Primary: note-based detection (PIA API account found in internal notes)
+  if (ticket.piaDetectedInNotes) {
+    return { usedPIA: true, piaIndicator: 'internal note (PIA API account)', piaSource: 'notes' };
+  }
+
+  // Fallback: keyword scan of resolution/description
+  const text = [
+    ticket.resolution || '',
+    ticket.description || '',
+  ].join(' ').toLowerCase();
+
+  for (const kw of PIA_KEYWORD_INDICATORS) {
+    if (text.includes(kw)) {
+      return { usedPIA: true, piaIndicator: kw, piaSource: 'keyword' };
+    }
+  }
+  return { usedPIA: false, piaIndicator: null, piaSource: null };
+}
+
+/**
  * Score the client description for specificity — more detail about a
  * known problem pattern means higher confidence the category is right.
  * Returns a confidence bonus (0-20).
@@ -289,6 +330,9 @@ function analyzeTicket(ticket) {
   // Score the resolution text for automation indicators
   const resolutionScore = scoreResolution(ticket.resolution);
 
+  // Detect PIA / automation platform usage
+  const piaResult = detectPIA(ticket);
+
   // No category match at all
   if (!bestMatch || bestScore === 0) {
     const hasScriptMatch = symptomScripts.length > 0 && symptomScripts[0].relevance >= 25;
@@ -307,6 +351,12 @@ function analyzeTicket(ticket) {
       queueID: ticket.queueID || null,
       createDate: ticket.createDate || null,
       assignedResourceID: ticket.assignedResourceID || null,
+      companyID: ticket.companyID || null,
+      companyName: ticket.companyName || null,
+      issueType: ticket.issueType || null,
+      subIssueType: ticket.subIssueType || null,
+      issueTypeName: ticket.issueTypeName || null,
+      subIssueTypeName: ticket.subIssueTypeName || null,
       workedHours: ticket.workedHours || 0,
       firstResponseDateTime: ticket.firstResponseDateTime || null,
       resolutionPlanDateTime: ticket.resolutionPlanDateTime || null,
@@ -328,6 +378,9 @@ function analyzeTicket(ticket) {
         : 'This ticket does not match any known automation patterns. Manual review required to determine resolution path.',
       resolutionAnalysis: resolutionScore.reasons,
       quickWinValue: 0,
+      usedPIA: piaResult.usedPIA,
+      piaIndicator: piaResult.piaIndicator,
+      piaSource: piaResult.piaSource,
     };
   }
 
@@ -373,6 +426,9 @@ function analyzeTicket(ticket) {
         : `Weak match to "${bestMatch.label}" (${confidence}% confidence). Not enough signal to recommend automation. Manual review needed.`,
       resolutionAnalysis: resolutionScore.reasons,
       quickWinValue: 0,
+      usedPIA: piaResult.usedPIA,
+      piaIndicator: piaResult.piaIndicator,
+      piaSource: piaResult.piaSource,
     };
   }
 
@@ -408,6 +464,12 @@ function analyzeTicket(ticket) {
     queueID: ticket.queueID || null,
     createDate: ticket.createDate || null,
     assignedResourceID: ticket.assignedResourceID || null,
+    companyID: ticket.companyID || null,
+    companyName: ticket.companyName || null,
+    issueType: ticket.issueType || null,
+    subIssueType: ticket.subIssueType || null,
+    issueTypeName: ticket.issueTypeName || null,
+    subIssueTypeName: ticket.subIssueTypeName || null,
     workedHours: ticket.workedHours || 0,
     firstResponseDateTime: ticket.firstResponseDateTime || null,
     resolutionPlanDateTime: ticket.resolutionPlanDateTime || null,
@@ -427,6 +489,9 @@ function analyzeTicket(ticket) {
     automationPath: readiness.path,
     resolutionAnalysis: resolutionScore.reasons,
     quickWinValue: isQuickHitter ? Math.round((adjustedAutoScore * (20 - bestMatch.avgMinutes + 1) * adjustedConfidence) / 100) : 0,
+    usedPIA: piaResult.usedPIA,
+    piaIndicator: piaResult.piaIndicator,
+    piaSource: piaResult.piaSource,
   };
 }
 
@@ -453,9 +518,20 @@ function getSummary(analyzedTickets) {
   const quickHitters = analyzedTickets.filter(t => t.isQuickHitter);
   const automatable = analyzedTickets.filter(t => t.automationScore >= 70);
   const categories = {};
+  const issueTypeBreakdown = {};
 
   for (const t of analyzedTickets) {
-    categories[t.categoryLabel] = (categories[t.categoryLabel] || 0) + 1;
+    if (t.categoryLabel !== 'Needs Review' && t.categoryLabel !== 'Uncategorized') {
+      categories[t.categoryLabel] = (categories[t.categoryLabel] || 0) + 1;
+    }
+
+    // Build issue type / sub-issue type breakdown
+    const issueName = t.issueTypeName || null;
+    const subIssueName = t.subIssueTypeName || null;
+    if (issueName) {
+      const label = subIssueName ? `${issueName} / ${subIssueName}` : issueName;
+      issueTypeBreakdown[label] = (issueTypeBreakdown[label] || 0) + 1;
+    }
   }
 
   return {
@@ -464,6 +540,7 @@ function getSummary(analyzedTickets) {
     automatableCount: automatable.length,
     estimatedTimeSaved: quickHitters.reduce((sum, t) => sum + (t.estimatedMinutes || 0), 0),
     categoryBreakdown: categories,
+    issueTypeBreakdown,
     avgAutomationScore: analyzedTickets.length
       ? Math.round(analyzedTickets.reduce((s, t) => s + t.automationScore, 0) / analyzedTickets.length)
       : 0,
@@ -693,9 +770,9 @@ function getSuggestedScripts(category) {
  * Get deep analytics for a batch of analyzed tickets.
  * Includes trend data, priority breakdown, ROI projections, and top opportunities.
  */
-function getDeepAnalytics(analyzedTickets, rawTickets = []) {
-  // Priority breakdown
-  const priorityMap = { 1: 'Critical', 2: 'High', 3: 'Medium', 4: 'Low' };
+function getDeepAnalytics(analyzedTickets, rawTickets = [], options = {}) {
+  // Priority breakdown — use dynamic map from Autotask picklist if provided, else fallback for demo
+  const priorityMap = options.priorityMap || { 1: 'Critical', 2: 'High', 3: 'Medium', 4: 'Low' };
   const priorityBreakdown = {};
   for (const t of analyzedTickets) {
     const pLabel = priorityMap[t.priority] || `Priority ${t.priority || 'None'}`;
@@ -704,6 +781,7 @@ function getDeepAnalytics(analyzedTickets, rawTickets = []) {
 
   // Category deep stats (count, avg automation score, total time saveable)
   const categoryStats = {};
+  const issueTypeStats = {};
   for (const t of analyzedTickets) {
     if (!categoryStats[t.categoryLabel]) {
       categoryStats[t.categoryLabel] = {
@@ -718,11 +796,38 @@ function getDeepAnalytics(analyzedTickets, rawTickets = []) {
     cs.totalAutomationScore += t.automationScore;
     cs.totalMinutes += t.estimatedMinutes || 0;
     if (t.isQuickHitter) cs.quickHitters++;
+
+    // Issue type / sub-issue type stats
+    const issueName = t.issueTypeName || null;
+    const subIssueName = t.subIssueTypeName || null;
+    if (issueName) {
+      const label = subIssueName ? `${issueName} / ${subIssueName}` : issueName;
+      if (!issueTypeStats[label]) {
+        issueTypeStats[label] = { count: 0, totalAutomationScore: 0, totalMinutes: 0, quickHitters: 0 };
+      }
+      const its = issueTypeStats[label];
+      its.count++;
+      its.totalAutomationScore += t.automationScore;
+      its.totalMinutes += t.estimatedMinutes || 0;
+      if (t.isQuickHitter) its.quickHitters++;
+    }
   }
 
   const categoryDeepBreakdown = Object.entries(categoryStats)
+    .filter(([label]) => label !== 'Needs Review' && label !== 'Uncategorized')
     .map(([label, stats]) => ({
       category: label,
+      count: stats.count,
+      avgAutomationScore: stats.count ? Math.round(stats.totalAutomationScore / stats.count) : 0,
+      totalMinutesSaveable: stats.totalMinutes,
+      quickHitters: stats.quickHitters,
+      pctOfTotal: analyzedTickets.length ? Math.round((stats.count / analyzedTickets.length) * 100) : 0,
+    }))
+    .sort((a, b) => b.count - a.count);
+
+  const issueTypeDeepBreakdown = Object.entries(issueTypeStats)
+    .map(([label, stats]) => ({
+      issueType: label,
       count: stats.count,
       avgAutomationScore: stats.count ? Math.round(stats.totalAutomationScore / stats.count) : 0,
       totalMinutesSaveable: stats.totalMinutes,
@@ -747,7 +852,7 @@ function getDeepAnalytics(analyzedTickets, rawTickets = []) {
 
   // Top automation opportunities: highest score + highest volume combos
   const topOpportunities = categoryDeepBreakdown
-    .filter(c => c.category !== 'Uncategorized')
+    .filter(c => c.category !== 'Uncategorized' && c.category !== 'Needs Review')
     .map(c => ({
       category: c.category,
       count: c.count,
@@ -776,12 +881,443 @@ function getDeepAnalytics(analyzedTickets, rawTickets = []) {
     hourlyRateUsed: avgHourlyRate,
   };
 
+  // ── Time Analysis: actual vs expected vs budgeted ──
+  const timeByCategory = {};
+  const timeLeaks = [];
+
+  for (const t of analyzedTickets) {
+    if (t.categoryLabel === 'Needs Review' || t.categoryLabel === 'Uncategorized') continue;
+    const actualMin = (t.workedHours || 0) * 60;
+    const expectedMin = t.estimatedMinutes || 0;
+    const budgetedMin = (t.resolutionPlanHours != null ? t.resolutionPlanHours : 0) * 60;
+
+    if (!timeByCategory[t.categoryLabel]) {
+      timeByCategory[t.categoryLabel] = {
+        count: 0,
+        totalActual: 0,
+        totalExpected: 0,
+        totalBudgeted: 0,
+        ticketsWithTime: 0,
+        ticketsWithBudget: 0,
+      };
+    }
+    const tc = timeByCategory[t.categoryLabel];
+    tc.count++;
+    if (actualMin > 0) { tc.totalActual += actualMin; tc.ticketsWithTime++; }
+    tc.totalExpected += expectedMin;
+    if (budgetedMin > 0) { tc.totalBudgeted += budgetedMin; tc.ticketsWithBudget++; }
+
+    // Flag time leaks: actual time significantly exceeds expected time
+    if (actualMin > 0 && expectedMin > 0) {
+      const overageMin = actualMin - expectedMin;
+      const overagePct = Math.round((overageMin / expectedMin) * 100);
+      if (overagePct > 50 && overageMin > 10) {
+        timeLeaks.push({
+          ticketId: t.ticketId,
+          ticketNumber: t.ticketNumber,
+          title: t.title,
+          category: t.categoryLabel,
+          actualMinutes: Math.round(actualMin),
+          expectedMinutes: expectedMin,
+          budgetedMinutes: budgetedMin > 0 ? Math.round(budgetedMin) : null,
+          overageMinutes: Math.round(overageMin),
+          overagePct,
+          assignedResourceID: t.assignedResourceID,
+          resolution: t.resolution || '',
+          resolutionAnalysis: t.resolutionAnalysis || [],
+        });
+      }
+    }
+  }
+
+  const timeCategoryBreakdown = Object.entries(timeByCategory)
+    .map(([label, tc]) => ({
+      category: label,
+      count: tc.count,
+      avgActualMin: tc.ticketsWithTime ? Math.round(tc.totalActual / tc.ticketsWithTime) : 0,
+      avgExpectedMin: tc.count ? Math.round(tc.totalExpected / tc.count) : 0,
+      avgBudgetedMin: tc.ticketsWithBudget ? Math.round(tc.totalBudgeted / tc.ticketsWithBudget) : 0,
+      totalActualMin: Math.round(tc.totalActual),
+      totalExpectedMin: Math.round(tc.totalExpected),
+      totalBudgetedMin: Math.round(tc.totalBudgeted),
+      ticketsWithTime: tc.ticketsWithTime,
+      ticketsWithBudget: tc.ticketsWithBudget,
+      efficiencyPct: tc.ticketsWithTime && tc.totalExpected > 0
+        ? Math.round((tc.totalExpected / tc.totalActual) * 100)
+        : null,
+    }))
+    .sort((a, b) => b.totalActualMin - a.totalActualMin);
+
+  // Summary stats
+  const ticketsWithTime = analyzedTickets.filter(t => (t.workedHours || 0) > 0 && t.categoryLabel !== 'Needs Review' && t.categoryLabel !== 'Uncategorized');
+  const totalActualMin = ticketsWithTime.reduce((s, t) => s + (t.workedHours || 0) * 60, 0);
+  const totalExpectedMin = ticketsWithTime.reduce((s, t) => s + (t.estimatedMinutes || 0), 0);
+  const totalOverageMin = totalActualMin - totalExpectedMin;
+
+  const timeAnalysis = {
+    summary: {
+      ticketsWithTime: ticketsWithTime.length,
+      totalActualHours: Math.round(totalActualMin / 60 * 10) / 10,
+      totalExpectedHours: Math.round(totalExpectedMin / 60 * 10) / 10,
+      totalOverageHours: Math.round(totalOverageMin / 60 * 10) / 10,
+      overallEfficiencyPct: totalExpectedMin > 0 ? Math.round((totalExpectedMin / totalActualMin) * 100) : null,
+    },
+    byCategory: timeCategoryBreakdown,
+    timeLeaks: timeLeaks.sort((a, b) => b.overageMinutes - a.overageMinutes),
+    totalTimeLostMinutes: timeLeaks.reduce((s, t) => s + t.overageMinutes, 0),
+  };
+
+  // ── Quick Hitter Validation ──
+  // Compare predicted 5-20 min tickets against actual worked time.
+  const quickHitterTickets = analyzedTickets.filter(t => t.isQuickHitter);
+  const qhWithTime = quickHitterTickets.filter(t => (t.workedHours || 0) > 0);
+
+  const qhValidation = {
+    totalPredicted: quickHitterTickets.length,
+    withActualTime: qhWithTime.length,
+    withoutTime: quickHitterTickets.length - qhWithTime.length,
+    // A prediction is "accurate" if actual time is <= 25 min (allowing 5 min buffer over 20)
+    accurateCount: 0,
+    underestimatedCount: 0,
+    // PIA usage among quick hitters
+    usedPIACount: quickHitterTickets.filter(t => t.usedPIA).length,
+    // Detail rows for the UI table
+    tickets: [],
+    // Issue type breakdown of quick hitters
+    byIssueType: {},
+  };
+
+  for (const t of quickHitterTickets) {
+    const actualMin = (t.workedHours || 0) * 60;
+    const estimatedMin = t.estimatedMinutes || 0;
+    const hasTime = actualMin > 0;
+    const isAccurate = hasTime && actualMin <= 25;
+    const isUnderestimated = hasTime && actualMin > 25;
+
+    if (isAccurate) qhValidation.accurateCount++;
+    if (isUnderestimated) qhValidation.underestimatedCount++;
+
+    // Issue type grouping
+    const itLabel = t.issueTypeName
+      ? (t.subIssueTypeName ? `${t.issueTypeName} / ${t.subIssueTypeName}` : t.issueTypeName)
+      : (t.categoryLabel || 'Uncategorized');
+    if (!qhValidation.byIssueType[itLabel]) {
+      qhValidation.byIssueType[itLabel] = { count: 0, accurate: 0, underestimated: 0, noTime: 0, usedPIA: 0 };
+    }
+    const ig = qhValidation.byIssueType[itLabel];
+    ig.count++;
+    if (isAccurate) ig.accurate++;
+    if (isUnderestimated) ig.underestimated++;
+    if (!hasTime) ig.noTime++;
+    if (t.usedPIA) ig.usedPIA++;
+
+    qhValidation.tickets.push({
+      ticketId: t.ticketId,
+      ticketNumber: t.ticketNumber,
+      title: t.title,
+      companyName: t.companyName || 'Unknown',
+      issueType: itLabel,
+      currentPriority: priorityMap[t.priority] || `P${t.priority}`,
+      estimatedMinutes: estimatedMin,
+      actualMinutes: hasTime ? Math.round(actualMin) : null,
+      variance: hasTime ? Math.round(actualMin - estimatedMin) : null,
+      status: !hasTime ? 'no_data' : (isAccurate ? 'accurate' : 'underestimated'),
+      usedPIA: t.usedPIA,
+      piaIndicator: t.piaIndicator,
+      piaSource: t.piaSource,
+      automationScore: t.automationScore,
+    });
+  }
+
+  qhValidation.accuracyRate = qhWithTime.length > 0
+    ? Math.round((qhValidation.accurateCount / qhWithTime.length) * 100)
+    : null;
+
+  // ── Do It Now Analysis ──
+  // Analyze priority distribution as a pie chart and predict which
+  // current tickets should be "do it now" based on issue type patterns.
+
+  // Find the highest-priority value (lowest numeric key = highest priority)
+  const priorityKeys = Object.keys(priorityMap).map(Number).sort((a, b) => a - b);
+  const doItNowPriorityValue = priorityKeys[0] || 1;
+  const doItNowLabel = priorityMap[doItNowPriorityValue] || 'Critical';
+
+  // Priority pie data (count per priority label)
+  const priorityPie = {};
+  for (const t of analyzedTickets) {
+    const pLabel = priorityMap[t.priority] || `Priority ${t.priority || 'None'}`;
+    priorityPie[pLabel] = (priorityPie[pLabel] || 0) + 1;
+  }
+
+  // Historical "do it now" pattern: which issue types are most often set to highest priority?
+  const issueTypePriorityStats = {};
+  for (const t of analyzedTickets) {
+    const itLabel = t.issueTypeName
+      ? (t.subIssueTypeName ? `${t.issueTypeName} / ${t.subIssueTypeName}` : t.issueTypeName)
+      : (t.categoryLabel || 'Uncategorized');
+
+    if (!issueTypePriorityStats[itLabel]) {
+      issueTypePriorityStats[itLabel] = { total: 0, doItNow: 0 };
+    }
+    issueTypePriorityStats[itLabel].total++;
+    if (t.priority === doItNowPriorityValue) {
+      issueTypePriorityStats[itLabel].doItNow++;
+    }
+  }
+
+  // Calculate "do it now rate" per issue type — what % of this issue type ended up as highest priority
+  const doItNowByIssueType = Object.entries(issueTypePriorityStats)
+    .filter(([, s]) => s.total >= 2) // only include types with enough data
+    .map(([label, s]) => ({
+      issueType: label,
+      total: s.total,
+      doItNowCount: s.doItNow,
+      doItNowRate: Math.round((s.doItNow / s.total) * 100),
+    }))
+    .sort((a, b) => b.doItNowRate - a.doItNowRate || b.doItNowCount - a.doItNowCount);
+
+  // Predict: which current NON-do-it-now tickets should probably be "do it now"
+  // based on their issue type historically having a high do-it-now rate + quick hitter status
+  const doItNowRateMap = {};
+  for (const entry of doItNowByIssueType) {
+    doItNowRateMap[entry.issueType] = entry.doItNowRate;
+  }
+
+  // Also find all priority values whose label is "Do It Now" (case-insensitive)
+  const doItNowPriorityValues = new Set(
+    Object.entries(priorityMap)
+      .filter(([, label]) => /do\s*it\s*now/i.test(label))
+      .map(([key]) => Number(key))
+  );
+  doItNowPriorityValues.add(doItNowPriorityValue);
+
+  const doItNowPredictions = analyzedTickets
+    .filter(t => !doItNowPriorityValues.has(t.priority)) // not already do-it-now
+    .map(t => {
+      const itLabel = t.issueTypeName
+        ? (t.subIssueTypeName ? `${t.issueTypeName} / ${t.subIssueTypeName}` : t.issueTypeName)
+        : (t.categoryLabel || 'Uncategorized');
+
+      const historicalRate = doItNowRateMap[itLabel] || 0;
+      const isQuickHitter = t.isQuickHitter;
+      const hasHighAutoScore = t.automationScore >= 70;
+
+      // Prediction score: weighted combination of historical rate + quick hitter + auto score
+      let score = historicalRate;
+      if (isQuickHitter) score += 20;
+      if (hasHighAutoScore) score += 10;
+      if (t.usedPIA) score += 5;
+
+      return {
+        ticketId: t.ticketId,
+        ticketNumber: t.ticketNumber,
+        title: t.title,
+        companyName: t.companyName || 'Unknown',
+        issueType: itLabel,
+        currentPriority: priorityMap[t.priority] || `P${t.priority}`,
+        predictionScore: Math.min(100, score),
+        historicalRate,
+        isQuickHitter,
+        estimatedMinutes: t.estimatedMinutes,
+        workedHours: t.workedHours || 0,
+        usedPIA: !!t.usedPIA,
+        automationScore: t.automationScore,
+      };
+    })
+    .filter(t => t.predictionScore >= 30) // only show meaningful predictions
+    .sort((a, b) => b.predictionScore - a.predictionScore)
+    .slice(0, 20);
+
+  // Do It Now Correlation: time range x status x PIA
+  const dinTickets = analyzedTickets.filter(t => doItNowPriorityValues.has(t.priority));
+  const timeBuckets = ['0-5 min', '5-10 min', '10-20 min', '20-30 min', '30-60 min', '60+ min'];
+  function getTimeBucket(mins) {
+    if (mins <= 5) return '0-5 min';
+    if (mins <= 10) return '5-10 min';
+    if (mins <= 20) return '10-20 min';
+    if (mins <= 30) return '20-30 min';
+    if (mins <= 60) return '30-60 min';
+    return '60+ min';
+  }
+
+  const correlationMap = {};
+  for (const bucket of timeBuckets) {
+    correlationMap[bucket] = {
+      completed: { total: 0, withPIA: 0 },
+      open: { total: 0, withPIA: 0 },
+    };
+  }
+
+  const correlationTickets = [];
+  for (const t of dinTickets) {
+    const bucket = getTimeBucket(t.estimatedMinutes || 0);
+    const isCompleted = t.status === 5 || t.status === 'Complete';
+    const statusKey = isCompleted ? 'completed' : 'open';
+    correlationMap[bucket][statusKey].total++;
+    if (t.usedPIA) correlationMap[bucket][statusKey].withPIA++;
+    correlationTickets.push({
+      ticketId: t.ticketId,
+      ticketNumber: t.ticketNumber,
+      title: t.title,
+      companyName: t.companyName || '',
+      estimatedMinutes: t.estimatedMinutes || 0,
+      timeBucket: bucket,
+      isCompleted,
+      workedHours: t.workedHours || 0,
+      usedPIA: t.usedPIA,
+      automationScore: t.automationScore,
+      issueType: t.issueTypeName
+        ? (t.subIssueTypeName ? `${t.issueTypeName} / ${t.subIssueTypeName}` : t.issueTypeName)
+        : (t.categoryLabel || ''),
+    });
+  }
+
+  const dinCorrelation = {
+    buckets: timeBuckets.map(bucket => ({
+      range: bucket,
+      completed: correlationMap[bucket].completed.total,
+      completedPIA: correlationMap[bucket].completed.withPIA,
+      open: correlationMap[bucket].open.total,
+      openPIA: correlationMap[bucket].open.withPIA,
+    })),
+    tickets: correlationTickets.sort((a, b) => a.estimatedMinutes - b.estimatedMinutes),
+    totalDIN: dinTickets.length,
+  };
+
+  const doItNowAnalysis = {
+    doItNowLabel,
+    doItNowPriorityValue,
+    priorityPie,
+    totalDoItNow: analyzedTickets.filter(t => t.priority === doItNowPriorityValue).length,
+    totalTickets: analyzedTickets.length,
+    byIssueType: doItNowByIssueType,
+    predictions: doItNowPredictions,
+    correlation: dinCorrelation,
+  };
+
+  // ── Overview Charts ──
+
+  // 1. Ticket Volume by Client (top 15, exclude unknown)
+  const clientVolume = {};
+  for (const t of analyzedTickets) {
+    const name = t.companyName;
+    if (!name || /^unknown$/i.test(name)) continue;
+    clientVolume[name] = (clientVolume[name] || 0) + 1;
+  }
+  const ticketsByClient = Object.entries(clientVolume)
+    .map(([client, count]) => ({ client, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 15);
+
+  // 2. Average Resolution Time by Priority
+  const priorityTimeStats = {};
+  for (const t of analyzedTickets) {
+    const pLabel = priorityMap[t.priority] || `P${t.priority}`;
+    if (!priorityTimeStats[pLabel]) priorityTimeStats[pLabel] = { total: 0, count: 0 };
+    const actualMin = (t.workedHours || 0) * 60;
+    if (actualMin > 0) {
+      priorityTimeStats[pLabel].total += actualMin;
+      priorityTimeStats[pLabel].count++;
+    }
+  }
+  const avgResolutionByPriority = Object.entries(priorityTimeStats)
+    .filter(([, s]) => s.count > 0)
+    .map(([priority, s]) => ({ priority, avgMinutes: Math.round(s.total / s.count), count: s.count }))
+    .sort((a, b) => a.avgMinutes - b.avgMinutes);
+
+  // 3. Tickets by Day of Week
+  const dayOfWeekCounts = [0, 0, 0, 0, 0, 0, 0]; // Sun-Sat
+  const dayLabels = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  for (const t of rawTickets) {
+    if (t.createDate) {
+      const dow = new Date(t.createDate).getDay();
+      dayOfWeekCounts[dow]++;
+    }
+  }
+  const ticketsByDayOfWeek = dayLabels.map((label, i) => ({ day: label, count: dayOfWeekCounts[i] }));
+
+  // 3b. Tickets by Hour of Day
+  const hourCounts = new Array(24).fill(0);
+  for (const t of rawTickets) {
+    if (t.createDate) {
+      const hour = new Date(t.createDate).getHours();
+      hourCounts[hour]++;
+    }
+  }
+  const ticketsByHourOfDay = hourCounts.map((count, h) => {
+    const ampm = h === 0 ? '12 AM' : h < 12 ? `${h} AM` : h === 12 ? '12 PM' : `${h - 12} PM`;
+    return { hour: ampm, count };
+  });
+
+  // 4. Ticket Age Distribution (open tickets)
+  const now = new Date();
+  const ageBuckets = { '< 1 day': 0, '1-3 days': 0, '3-7 days': 0, '7-14 days': 0, '14-30 days': 0, '30+ days': 0 };
+  for (const t of rawTickets) {
+    // Only count non-completed tickets, or all if we have no status info
+    const isOpen = !t.status || (t.status !== 5 && t.status !== 'Complete');
+    if (isOpen && t.createDate) {
+      const ageDays = (now - new Date(t.createDate)) / (1000 * 60 * 60 * 24);
+      if (ageDays < 1) ageBuckets['< 1 day']++;
+      else if (ageDays < 3) ageBuckets['1-3 days']++;
+      else if (ageDays < 7) ageBuckets['3-7 days']++;
+      else if (ageDays < 14) ageBuckets['7-14 days']++;
+      else if (ageDays < 30) ageBuckets['14-30 days']++;
+      else ageBuckets['30+ days']++;
+    }
+  }
+  const ticketAgeDistribution = Object.entries(ageBuckets).map(([bucket, count]) => ({ bucket, count }));
+
+  // 5. Automation Score Distribution
+  const autoScoreBuckets = { '0-19': 0, '20-39': 0, '40-59': 0, '60-79': 0, '80-100': 0 };
+  for (const t of analyzedTickets) {
+    const s = t.automationScore || 0;
+    if (s < 20) autoScoreBuckets['0-19']++;
+    else if (s < 40) autoScoreBuckets['20-39']++;
+    else if (s < 60) autoScoreBuckets['40-59']++;
+    else if (s < 80) autoScoreBuckets['60-79']++;
+    else autoScoreBuckets['80-100']++;
+  }
+  const automationScoreDistribution = Object.entries(autoScoreBuckets).map(([range, count]) => ({ range, count }));
+
+  // 6. Quick Hitter vs Long-Running Split
+  const quickCount = analyzedTickets.filter(t => t.isQuickHitter).length;
+  const longCount = analyzedTickets.length - quickCount;
+  const quickHitterSplit = { quickHitters: quickCount, longRunning: longCount, total: analyzedTickets.length };
+
+  // 7. PIA Coverage
+  const piaUsedCount = analyzedTickets.filter(t => t.usedPIA).length;
+  const manualCount = analyzedTickets.length - piaUsedCount;
+  const piaCoverage = { piaUsed: piaUsedCount, manual: manualCount, total: analyzedTickets.length };
+
+  // 8. Zero Hours on Completed Tickets
+  const completedTickets = analyzedTickets.filter(t => t.status === 5 || t.status === 'Complete');
+  const zeroHoursCount = completedTickets.filter(t => !t.workedHours || t.workedHours === 0).length;
+  const hasHoursCount = completedTickets.length - zeroHoursCount;
+  const zeroHoursCompleted = { zeroHours: zeroHoursCount, hasHours: hasHoursCount, total: completedTickets.length };
+
+  const overviewCharts = {
+    ticketsByClient,
+    avgResolutionByPriority,
+    ticketsByDayOfWeek,
+    ticketsByHourOfDay,
+    ticketAgeDistribution,
+    automationScoreDistribution,
+    quickHitterSplit,
+    piaCoverage,
+    zeroHoursCompleted,
+  };
+
   return {
     priorityBreakdown,
     categoryDeepBreakdown,
+    issueTypeDeepBreakdown,
     trendData,
     topOpportunities,
     roiProjection,
+    timeAnalysis,
+    quickHitterValidation: qhValidation,
+    doItNowAnalysis,
+    overviewCharts,
   };
 }
 

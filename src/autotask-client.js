@@ -2,22 +2,50 @@ const fetch = require('node-fetch');
 
 class AutotaskClient {
   constructor({ apiUser, apiSecret, integrationCode, zone }) {
-    this.baseUrl = `${zone}/ATServicesRest/V1.0`;
+    // Validate and fix common zone URL mistakes
+    let cleanZone = (zone || '').trim().replace(/\/+$/, '');
+
+    // Detect web portal URLs and auto-correct to API URL
+    const portalMatch = cleanZone.match(/https?:\/\/ww(\d+)\.autotask\.net/i);
+    if (portalMatch) {
+      const zoneNum = portalMatch[1];
+      const corrected = `https://webservices${zoneNum}.autotask.net`;
+      console.warn(`[Autotask] WARNING: Zone "${cleanZone}" looks like the web portal, not the API.`);
+      console.warn(`[Autotask] Auto-correcting to "${corrected}"`);
+      console.warn(`[Autotask] Please update AUTOTASK_API_ZONE in your .env file to: ${corrected}`);
+      cleanZone = corrected;
+    }
+
+    this.zone = cleanZone;
+    this.baseUrl = `${cleanZone}/ATServicesRest/V1.0`;
     this.headers = {
       'Content-Type': 'application/json',
       'UserName': apiUser,
       'Secret': apiSecret,
       'ApiIntegrationCode': integrationCode,
     };
+
+    console.log(`[Autotask] Client initialized — Zone: ${cleanZone}`);
+    console.log(`[Autotask] API Base URL: ${this.baseUrl}`);
+    console.log(`[Autotask] API User: ${apiUser ? apiUser.substring(0, 3) + '***' : '(empty)'}`);
+    console.log(`[Autotask] Integration Code: ${integrationCode ? integrationCode.substring(0, 4) + '***' : '(empty)'}`);
   }
 
   async request(endpoint, method = 'GET', body = null) {
+    const url = `${this.baseUrl}${endpoint}`;
     const opts = { method, headers: this.headers };
     if (body) opts.body = JSON.stringify(body);
 
-    const res = await fetch(`${this.baseUrl}${endpoint}`, opts);
+    const res = await fetch(url, opts);
     if (!res.ok) {
       const text = await res.text();
+      let hint = '';
+      if (res.status === 401) {
+        hint = ' — Check AUTOTASK_API_USER, AUTOTASK_API_SECRET, and AUTOTASK_API_INTEGRATION_CODE in your .env file';
+      } else if (res.status === 403) {
+        hint = ' — Check AUTOTASK_API_ZONE in your .env file (should be https://webservicesN.autotask.net, not the web portal URL)';
+      }
+      console.error(`[Autotask] ${method} ${url} → ${res.status}${hint}`);
       throw new Error(`Autotask API ${res.status}: ${text}`);
     }
     return res.json();
@@ -122,6 +150,16 @@ class AutotaskClient {
   }
 
   /**
+   * Update a ticket's fields via PATCH.
+   * @param {number} ticketId
+   * @param {object} fields - fields to update (e.g. { priority: 1 })
+   */
+  async updateTicket(ticketId, fields) {
+    const data = await this.request(`/Tickets`, 'PATCH', { id: ticketId, ...fields });
+    return data.item || data;
+  }
+
+  /**
    * Get ticket notes/comments for deeper analysis.
    */
   async getTicketNotes(ticketId) {
@@ -144,14 +182,37 @@ class AutotaskClient {
   }
 
   /**
-   * Fetch issue/sub-issue types for better categorization.
+   * Fetch priority picklist values (maps numeric IDs to labels like Critical, High, etc.)
    */
-  async getIssueTypes() {
-    const data = await this.request(
-      '/Tickets/entityInformation/fields'
-    );
-    const issueField = (data.fields || []).find(f => f.name === 'issueType');
-    return issueField ? issueField.picklistValues || [] : [];
+  async getPriorities() {
+    const data = await this.request('/Tickets/entityInformation/fields');
+    const priorityField = (data.fields || []).find(f => f.name === 'priority');
+    if (!priorityField || !priorityField.picklistValues) return [];
+    return priorityField.picklistValues
+      .filter(v => v.isActive)
+      .map(v => ({ value: v.value, label: v.label }));
+  }
+
+  /**
+   * Fetch issue type and sub-issue type picklist values.
+   * Returns { issueTypes: [{value, label}], subIssueTypes: [{value, label, parentValue}] }
+   */
+  async getIssueAndSubIssueTypes() {
+    const data = await this.request('/Tickets/entityInformation/fields');
+    const fields = data.fields || [];
+
+    const issueField = fields.find(f => f.name === 'issueType');
+    const subIssueField = fields.find(f => f.name === 'subIssueType');
+
+    const issueTypes = (issueField?.picklistValues || [])
+      .filter(v => v.isActive)
+      .map(v => ({ value: v.value, label: v.label }));
+
+    const subIssueTypes = (subIssueField?.picklistValues || [])
+      .filter(v => v.isActive)
+      .map(v => ({ value: v.value, label: v.label, parentValue: v.parentValue || null }));
+
+    return { issueTypes, subIssueTypes };
   }
 
   /**
@@ -233,6 +294,82 @@ class AutotaskClient {
     }
 
     return hoursMap;
+  }
+
+  /**
+   * Fetch internal ticket notes for a set of ticket IDs in batches.
+   * Returns a map of ticketID -> array of note objects.
+   * Each note has: id, ticketID, title, description, noteType, createDateTime,
+   * creatorResourceID, publish (internal vs external).
+   */
+  async getNotesForTickets(ticketIds) {
+    if (!ticketIds || ticketIds.length === 0) return {};
+
+    const notesMap = {};
+    let failedBatches = 0;
+    const batchSize = 50;
+
+    for (let i = 0; i < ticketIds.length; i += batchSize) {
+      const batch = ticketIds.slice(i, i + batchSize);
+
+      const filter = {
+        filter: batch.length > 1
+          ? [{ op: 'or', items: batch.map(id => ({ op: 'eq', field: 'ticketID', value: id })) }]
+          : [{ op: 'eq', field: 'ticketID', value: batch[0] }],
+        MaxRecords: 500,
+      };
+
+      try {
+        const notes = await this.queryAll('/TicketNotes/query', filter);
+        for (const note of notes) {
+          const tid = note.ticketID;
+          if (!notesMap[tid]) notesMap[tid] = [];
+          notesMap[tid].push(note);
+        }
+      } catch (err) {
+        failedBatches++;
+        console.warn(`[TicketNotes] Batch ${Math.floor(i / batchSize) + 1} failed: ${err.message}`);
+      }
+    }
+
+    if (failedBatches > 0) {
+      console.warn(`[TicketNotes] ${failedBatches} batch(es) failed out of ${Math.ceil(ticketIds.length / batchSize)}.`);
+    }
+
+    return notesMap;
+  }
+
+  /**
+   * Fetch company names for a set of company IDs.
+   * Returns a map of companyID -> companyName.
+   */
+  async getCompanyNames(companyIds) {
+    if (!companyIds || companyIds.length === 0) return {};
+
+    const nameMap = {};
+    const batchSize = 50;
+
+    for (let i = 0; i < companyIds.length; i += batchSize) {
+      const batch = companyIds.slice(i, i + batchSize);
+
+      const filter = {
+        filter: batch.length > 1
+          ? [{ op: 'or', items: batch.map(id => ({ op: 'eq', field: 'id', value: id })) }]
+          : [{ op: 'eq', field: 'id', value: batch[0] }],
+        MaxRecords: 500,
+      };
+
+      try {
+        const data = await this.request('/Companies/query', 'POST', filter);
+        for (const c of (data.items || [])) {
+          nameMap[c.id] = c.companyName || `Company ${c.id}`;
+        }
+      } catch (err) {
+        console.warn(`[Autotask] Company name batch failed: ${err.message}`);
+      }
+    }
+
+    return nameMap;
   }
 }
 

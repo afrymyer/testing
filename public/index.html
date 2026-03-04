@@ -4,12 +4,22 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>IntermixIT | Ticket Analyzer</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css?v=32">
 </head>
 <body>
   <header>
-    <h1><span class="brand-name">INTERMI<span class="brand-x">X</span>IT</span> Ticket Analyzer</h1>
-    <p class="subtitle">Run Faster, Safer, and Smarter with IT That Actually Works</p>
+    <div class="header-inner">
+      <div class="header-brand">
+        <img src="logo.png" alt="IntermixIT" class="header-logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='';">
+        <h1 style="display:none;"><span class="brand-name">INTERMI<span class="brand-x">X</span>IT</span></h1>
+        <p class="subtitle">Run Faster, Safer, and Smarter with IT That Actually Works</p>
+      </div>
+      <div class="header-badge"><span class="header-badge-icon">&#9670;</span> Ticket Analyzer</div>
+    </div>
+    <div class="header-glow"></div>
   </header>
 
   <main>
@@ -23,6 +33,7 @@
       <div class="controls-row">
         <button id="btn-fetch" class="btn btn-primary">Fetch Tickets</button>
         <button id="btn-demo" class="btn btn-secondary">Load Demo Tickets</button>
+        <button id="btn-ai" class="btn btn-ai hidden" title="Run Claude AI analysis on loaded tickets">AI Analyze</button>
         <button id="btn-scripts" class="btn btn-secondary">Browse All Scripts</button>
       </div>
 
@@ -103,23 +114,28 @@
 
     <!-- Summary Dashboard -->
     <section id="summary" class="summary hidden">
-      <div class="stat-card">
+      <div class="stat-card" style="--card-accent: var(--primary)">
+        <div class="stat-icon">&#9776;</div>
         <div class="stat-number" id="stat-total">0</div>
         <div class="stat-label">Total Tickets</div>
       </div>
-      <div class="stat-card highlight">
+      <div class="stat-card highlight" style="--card-accent: var(--green)">
+        <div class="stat-icon">&#9889;</div>
         <div class="stat-number" id="stat-quick">0</div>
         <div class="stat-label">Quick Hitters</div>
       </div>
-      <div class="stat-card">
+      <div class="stat-card" style="--card-accent: var(--cyan)">
+        <div class="stat-icon">&#9881;</div>
         <div class="stat-number" id="stat-automatable">0</div>
         <div class="stat-label">Automatable</div>
       </div>
-      <div class="stat-card">
+      <div class="stat-card" style="--card-accent: var(--accent)">
+        <div class="stat-icon">&#9202;</div>
         <div class="stat-number" id="stat-time-saved">0</div>
         <div class="stat-label">Est. Min Saved</div>
       </div>
-      <div class="stat-card">
+      <div class="stat-card" style="--card-accent: var(--purple)">
+        <div class="stat-icon">&#9733;</div>
         <div class="stat-number" id="stat-avg-score">0</div>
         <div class="stat-label">Avg Auto Score</div>
       </div>
@@ -128,71 +144,136 @@
     <!-- Tabbed Analytics -->
     <section id="analytics-section" class="analytics-section hidden">
       <div class="tab-bar">
-        <button class="tab-btn active" data-tab="tab-categories">Categories</button>
-        <button class="tab-btn" data-tab="tab-priorities">Priorities</button>
-        <button class="tab-btn" data-tab="tab-trends">Trends</button>
-        <button class="tab-btn" data-tab="tab-opportunities">Top Opportunities</button>
-        <button class="tab-btn" data-tab="tab-roi">ROI Projection</button>
-        <button class="tab-btn" data-tab="tab-quickwins">Quick Wins</button>
+        <button class="tab-btn active" data-tab="tab-overview">Overview</button>
+        <button class="tab-btn" data-tab="tab-clients">Clients</button>
         <button class="tab-btn" data-tab="tab-sde-metrics">SDE Metrics</button>
+        <button class="tab-btn" data-tab="tab-ai-insights" id="tab-btn-ai-insights">AI &amp; Tickets</button>
       </div>
 
-      <!-- Tab: Category Breakdown -->
-      <div id="tab-categories" class="tab-panel active">
-        <div class="panel-card">
-          <h3>Category Breakdown</h3>
-          <div id="category-bars"></div>
+      <!-- Tab: Consolidated Overview -->
+      <div id="tab-overview" class="tab-panel active">
+        <div class="overview-grid">
+          <div class="panel-card overview-categories">
+            <h3>Top 15 Issue Types</h3>
+            <div id="category-bars"></div>
+          </div>
+          <div class="panel-card overview-priorities">
+            <h3>Priority Distribution</h3>
+            <div id="priority-bars"></div>
+          </div>
         </div>
-        <div class="panel-card">
-          <h3>Category Details</h3>
-          <table class="data-table" id="category-detail-table">
-            <thead>
-              <tr>
-                <th>Category</th>
-                <th>Count</th>
-                <th>% of Total</th>
-                <th>Avg Auto Score</th>
-                <th>Total Min Saveable</th>
-                <th>Quick Hitters</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </div>
 
-      <!-- Tab: Priority Breakdown -->
-      <div id="tab-priorities" class="tab-panel">
-        <div class="panel-card">
-          <h3>Priority Distribution</h3>
-          <div id="priority-bars"></div>
-        </div>
-      </div>
-
-      <!-- Tab: Trends -->
-      <div id="tab-trends" class="tab-panel">
         <div class="panel-card">
           <h3>Ticket Volume Over Time</h3>
           <div id="trend-chart" class="trend-chart"></div>
           <p class="chart-note" id="trend-note"></p>
         </div>
-      </div>
 
-      <!-- Tab: Top Opportunities -->
-      <div id="tab-opportunities" class="tab-panel">
         <div class="panel-card">
-          <h3>Top Automation Opportunities</h3>
-          <p class="panel-desc">Categories ranked by impact score (volume x automation score x time savings)</p>
-          <div id="opportunities-list"></div>
+          <h3>Tickets by Hour of Day</h3>
+          <p class="panel-desc">What time of day are tickets being created?</p>
+          <div id="hour-of-day-bars"></div>
         </div>
+
+        <div class="panel-card">
+          <h3>Top 10 Noisiest Clients</h3>
+          <p class="panel-desc">Clients generating the most tickets</p>
+          <div id="noisy-clients-bars"></div>
+        </div>
+
+        <!-- Row: Client Volume + Avg Resolution by Priority -->
+        <div class="overview-grid">
+          <div class="panel-card">
+            <h3>Ticket Volume by Client</h3>
+            <p class="panel-desc">Top 15 clients by ticket count</p>
+            <div id="client-volume-bars"></div>
+          </div>
+          <div class="panel-card">
+            <h3>Avg Resolution Time by Priority</h3>
+            <p class="panel-desc">Average actual minutes worked per priority level</p>
+            <div id="resolution-by-priority-bars"></div>
+          </div>
+        </div>
+
+        <!-- Row: Day of Week + Ticket Age -->
+        <div class="overview-grid">
+          <div class="panel-card">
+            <h3>Tickets by Day of Week</h3>
+            <p class="panel-desc">When do tickets get created?</p>
+            <div id="day-of-week-bars"></div>
+          </div>
+          <div class="panel-card">
+            <h3>Ticket Age Distribution</h3>
+            <p class="panel-desc">How long have open tickets been sitting?</p>
+            <div id="ticket-age-bars"></div>
+          </div>
+        </div>
+
+        <!-- Row: Donut Charts -->
+        <div class="overview-grid overview-grid-3">
+          <div class="panel-card">
+            <h3>Quick Hitter vs Long-Running</h3>
+            <p class="panel-desc">Split of 5-20 min fixes vs longer tickets</p>
+            <div id="qh-split-donut" class="donut-chart-wrap"></div>
+          </div>
+          <div class="panel-card">
+            <h3>PIA Automation Coverage</h3>
+            <p class="panel-desc">Tickets resolved via PIA vs manual</p>
+            <div id="pia-coverage-donut" class="donut-chart-wrap"></div>
+          </div>
+          <div class="panel-card">
+            <h3>Completed with Zero Hours</h3>
+            <p class="panel-desc">Completed tickets with no time logged</p>
+            <div id="zero-hours-donut" class="donut-chart-wrap"></div>
+          </div>
+        </div>
+
       </div>
 
-      <!-- Tab: ROI Projection -->
-      <div id="tab-roi" class="tab-panel">
+      <!-- Tab: Clients -->
+      <div id="tab-clients" class="tab-panel">
         <div class="panel-card">
-          <h3>ROI Projection</h3>
-          <p class="panel-desc">Estimated savings if automatable tickets are fully automated</p>
-          <div id="roi-content" class="roi-grid"></div>
+          <h3>Client Overview</h3>
+          <p class="panel-desc">Ticket volume and issue breakdown per client. Click a row to expand details.</p>
+
+          <div class="client-search-bar">
+            <input type="text" id="client-search" placeholder="Search clients..." class="input-field" />
+          </div>
+
+          <table class="data-table" id="client-summary-table">
+            <thead>
+              <tr>
+                <th>Client</th>
+                <th>Tickets</th>
+                <th>Avg Auto Score</th>
+                <th>Top Issue Type</th>
+                <th>Quick Hitters</th>
+                <th>Est. Min Saveable</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <div class="panel-card" id="client-detail-panel" style="display:none;">
+          <h3 id="client-detail-name">Client Details</h3>
+          <div class="client-detail-stats" id="client-detail-stats"></div>
+          <h4>Issue Type Breakdown</h4>
+          <div id="client-detail-issues"></div>
+          <h4>Recent Tickets</h4>
+          <table class="data-table" id="client-detail-tickets">
+            <thead>
+              <tr>
+                <th>Ticket #</th>
+                <th>Title</th>
+                <th>Issue Type</th>
+                <th>Priority</th>
+                <th>Auto Score</th>
+                <th>Hours Worked</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
         </div>
       </div>
 
@@ -269,28 +350,191 @@
         </div>
       </div>
 
-      <!-- Tab: Quick Wins -->
-      <div id="tab-quickwins" class="tab-panel">
-        <div class="panel-card">
-          <h3>Quick Win Automation Targets</h3>
-          <p class="panel-desc">5-20 minute tickets with automation scripts ready to deploy. These deliver immediate value with minimal effort.</p>
-          <div id="quickwins-summary" class="quickwins-summary"></div>
+      <!-- Tab: AI Insights (shown after AI analysis) -->
+      <div id="tab-ai-insights" class="tab-panel">
+        <!-- Sub-tab bar -->
+        <div class="sub-tab-bar">
+          <button class="sub-tab-btn active" data-subtab="subtab-ai-insights">AI Insights</button>
+          <button class="sub-tab-btn" data-subtab="subtab-qh-validation">Quick Hitter Validation</button>
+          <button class="sub-tab-btn" data-subtab="subtab-do-it-now">Do It Now</button>
+          <button class="sub-tab-btn" data-subtab="subtab-tickets">Tickets</button>
         </div>
-        <div class="panel-card">
-          <h3>Quick Win Tickets by Category</h3>
-          <div id="quickwins-list"></div>
+
+        <!-- Sub-tab: AI Insights -->
+        <div id="subtab-ai-insights" class="sub-tab-panel active">
+          <div class="panel-card ai-insights-exec" id="ai-exec-summary"></div>
+          <div class="panel-card" id="ai-systemic-issues"></div>
+          <div class="panel-card" id="ai-strategic-recs"></div>
+          <div class="panel-card" id="ai-workload-insights"></div>
+          <div class="panel-card" id="ai-client-insights"></div>
+          <div class="panel-card" id="ai-service-delivery"></div>
+          <div class="panel-card" id="ai-auto-opportunities"></div>
+        </div>
+
+        <!-- Sub-tab: Quick Hitter Validation -->
+        <div id="subtab-qh-validation" class="sub-tab-panel">
+          <!-- Summary cards -->
+          <div class="panel-card" id="qh-validation-summary"></div>
+
+          <!-- Ticket-level detail -->
+          <div class="panel-card" id="qh-ticket-detail">
+            <h3>Ticket-Level Validation</h3>
+            <div class="qh-action-bar">
+              <div class="qh-filter-bar">
+                <select id="qh-status-filter" class="input-field">
+                  <option value="all">All Statuses</option>
+                  <option value="accurate">Accurate Only</option>
+                  <option value="underestimated">Underestimated Only</option>
+                  <option value="no_data">No Time Data</option>
+                  <option value="pia">Used PIA</option>
+              </select>
+              </div>
+              <div class="qh-priority-action">
+                <select id="qh-priority-select" class="input-field">
+                  <option value="">Set Priority To...</option>
+                </select>
+                <button id="qh-set-priority-btn" class="btn btn-accent btn-sm" disabled>
+                  Update Selected
+                </button>
+                <button id="qh-select-all-accurate" class="btn btn-outline btn-sm">
+                  Select All Accurate
+                </button>
+                <span id="qh-selected-count" class="qh-selected-label"></span>
+              </div>
+            </div>
+            <table class="data-table" id="qh-ticket-table">
+              <thead>
+                <tr>
+                  <th class="qh-check-col"><input type="checkbox" id="qh-check-all" title="Select all visible" /></th>
+                  <th>Ticket #</th>
+                  <th>Title</th>
+                  <th>Client</th>
+                  <th>Issue Type</th>
+                  <th>Priority</th>
+                  <th>Est. Min</th>
+                  <th>Actual Min</th>
+                  <th>Variance</th>
+                  <th>PIA?</th>
+                  <th>Verdict</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Sub-tab: Do It Now -->
+        <div id="subtab-do-it-now" class="sub-tab-panel">
+          <div class="overview-grid">
+            <div class="panel-card">
+              <h3>Do It Now — Priority Breakdown</h3>
+              <p class="panel-desc">Pie chart of ticket priority distribution across all tickets</p>
+              <div id="do-it-now-pie" class="din-pie-container"></div>
+              <div id="do-it-now-pie-legend" class="din-pie-legend"></div>
+            </div>
+            <div class="panel-card">
+              <h3>Do It Now — By Issue Type</h3>
+              <p class="panel-desc">Which issue types most often end up as highest priority?</p>
+              <table class="data-table" id="din-issue-type-table">
+                <thead>
+                  <tr>
+                    <th>Issue Type</th>
+                    <th>Total</th>
+                    <th>Do It Now</th>
+                    <th>Rate</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="panel-card" id="din-predictions-panel">
+            <h3>Predicted Do It Now Candidates</h3>
+            <p class="panel-desc">Tickets not currently set to highest priority that historically match "do it now" patterns based on issue type, quick hitter status, and automation score</p>
+            <div class="qh-action-bar">
+              <div class="qh-filter-bar">
+                <select id="din-status-filter" class="input-field">
+                  <option value="all">All Statuses</option>
+                  <option value="has_time">Has Time Data</option>
+                  <option value="no_time">No Time Data</option>
+                  <option value="pia">Used PIA</option>
+                  <option value="quick_hitter">Quick Hitters Only</option>
+                </select>
+              </div>
+              <div class="qh-priority-action">
+                <select id="din-priority-select" class="input-field">
+                  <option value="">Set Priority To...</option>
+                </select>
+                <button id="din-set-priority-btn" class="btn btn-accent btn-sm" disabled>
+                  Update Selected
+                </button>
+                <button id="din-select-all" class="btn btn-outline btn-sm">
+                  Select All Visible
+                </button>
+                <span id="din-selected-count" class="qh-selected-label"></span>
+              </div>
+            </div>
+            <table class="data-table" id="din-predictions-table">
+              <thead>
+                <tr>
+                  <th class="qh-check-col"><input type="checkbox" id="din-check-all" title="Select all" /></th>
+                  <th class="sortable" data-sort="ticketNumber">Ticket #</th>
+                  <th>Title</th>
+                  <th class="sortable" data-sort="companyName">Client</th>
+                  <th class="sortable" data-sort="issueType">Issue Type</th>
+                  <th class="sortable" data-sort="currentPriority">Current Priority</th>
+                  <th class="sortable" data-sort="estimatedMinutes">Est. Min</th>
+                  <th class="sortable" data-sort="actualMinutes">Actual Min</th>
+                  <th class="sortable" data-sort="variance">Variance</th>
+                  <th class="sortable" data-sort="usedPIA">PIA</th>
+                  <th class="sortable" data-sort="predictionScore">Prediction Score</th>
+                  <th class="sortable" data-sort="isQuickHitter">Quick Hitter?</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div class="panel-card" id="din-correlation-panel">
+            <h3>Do It Now — Time Range Correlation</h3>
+            <p class="panel-desc">How Do It Now tickets break down by estimated time range, completion status, and PIA automation usage</p>
+            <table class="data-table" id="din-correlation-table">
+              <thead>
+                <tr>
+                  <th>Est. Time Range</th>
+                  <th>Completed</th>
+                  <th>Completed w/ PIA</th>
+                  <th>Open</th>
+                  <th>Open w/ PIA</th>
+                  <th>Total</th>
+                  <th>Completion %</th>
+                  <th>PIA %</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+              <tfoot></tfoot>
+            </table>
+            <div id="din-correlation-detail"></div>
+          </div>
+        </div>
+
+        <!-- Sub-tab: Tickets -->
+        <div id="subtab-tickets" class="sub-tab-panel">
+          <div id="ai-ticket-list" class="panel-card" style="display:none;">
+            <div class="section-header">
+              <h3>Analyzed Tickets</h3>
+              <span id="ai-ticket-count-label" class="count-label"></span>
+            </div>
+            <div id="ai-tickets"></div>
+          </div>
         </div>
       </div>
+
     </section>
 
-    <!-- Ticket List -->
-    <section id="ticket-list" class="ticket-list">
-      <div class="section-header">
-        <h2>Analyzed Tickets</h2>
-        <span id="ticket-count-label" class="count-label"></span>
-      </div>
-      <div id="tickets"></div>
-    </section>
+    <!-- Ticket list now renders inside AI & Tickets tab -->
+    <section id="ticket-list" style="display:none !important;"></section>
+    <div id="tickets" style="display:none !important;"></div>
 
     <!-- Script Viewer Modal -->
     <div id="script-modal" class="modal hidden">
@@ -345,6 +589,14 @@
     </div>
   </main>
 
-  <script src="app.js"></script>
+  <footer class="app-footer">
+    <span class="footer-brand">IntermixIT</span>
+    <span class="footer-sep">&bull;</span>
+    <span>Ticket Analyzer</span>
+    <span class="footer-sep">&bull;</span>
+    <span class="footer-ai">AI-Powered</span>
+  </footer>
+
+  <script src="app.js?v=32"></script>
 </body>
 </html>
