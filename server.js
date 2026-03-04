@@ -1,7 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const path = require('path');
-const AutotaskClient = require('./src/autotask-client');
+const FabricClient = require('./src/fabric-client');
 const { analyzeTickets, getSummary, getDeepAnalytics, CATEGORY_PATTERNS } = require('./src/ticket-analyzer');
 const { loadScript, listScripts } = require('./src/script-mapper');
 const { analyzeWithAI, mergeAIResults, generateBatchInsights, isConfigured: isAIConfigured } = require('./src/ai-analyzer');
@@ -12,46 +12,47 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json({ limit: '5mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Initialize Autotask client (only if credentials are configured)
-let autotaskClient = null;
-if (process.env.AUTOTASK_API_USER && process.env.AUTOTASK_API_SECRET) {
-  autotaskClient = new AutotaskClient({
-    apiUser: process.env.AUTOTASK_API_USER,
-    apiSecret: process.env.AUTOTASK_API_SECRET,
-    integrationCode: process.env.AUTOTASK_API_INTEGRATION_CODE,
-    zone: process.env.AUTOTASK_API_ZONE || 'https://webservices6.autotask.net',
+// Initialize Fabric SQL client (connects to Microsoft Fabric Lakehouse/Warehouse)
+let fabricClient = null;
+if (process.env.FABRIC_SQL_SERVER && process.env.FABRIC_DATABASE) {
+  fabricClient = new FabricClient({
+    sqlServer: process.env.FABRIC_SQL_SERVER,
+    database: process.env.FABRIC_DATABASE,
+    tenantId: process.env.AZURE_TENANT_ID,
+    clientId: process.env.AZURE_CLIENT_ID,
+    clientSecret: process.env.AZURE_CLIENT_SECRET,
   });
 }
 
-// Cached priority map (fetched from Autotask on first use)
+// Cached priority map (fetched from Fabric on first use)
 let cachedPriorityMap = null;
 
 async function getPriorityMap() {
   if (cachedPriorityMap) return cachedPriorityMap;
-  if (!autotaskClient) return null; // demo mode uses default map
+  if (!fabricClient) return null; // demo mode uses default map
   try {
-    const priorities = await autotaskClient.getPriorities();
+    const priorities = await fabricClient.getPriorities();
     cachedPriorityMap = {};
     for (const p of priorities) {
       cachedPriorityMap[p.value] = p.label;
     }
-    console.log(`[Autotask] Priority map loaded:`, cachedPriorityMap);
+    console.log(`[Fabric] Priority map loaded:`, cachedPriorityMap);
     return cachedPriorityMap;
   } catch (err) {
-    console.warn(`[Autotask] Failed to fetch priority picklist: ${err.message}`);
+    console.warn(`[Fabric] Failed to fetch priority picklist: ${err.message}`);
     return null;
   }
 }
 
-// Cached issue type maps (fetched from Autotask on first use)
+// Cached issue type maps (fetched from Fabric on first use)
 let cachedIssueTypeMap = null;
 let cachedSubIssueTypeMap = null;
 
 async function getIssueTypeMaps() {
   if (cachedIssueTypeMap) return { issueTypeMap: cachedIssueTypeMap, subIssueTypeMap: cachedSubIssueTypeMap };
-  if (!autotaskClient) return { issueTypeMap: null, subIssueTypeMap: null };
+  if (!fabricClient) return { issueTypeMap: null, subIssueTypeMap: null };
   try {
-    const { issueTypes, subIssueTypes } = await autotaskClient.getIssueAndSubIssueTypes();
+    const { issueTypes, subIssueTypes } = await fabricClient.getIssueAndSubIssueTypes();
     cachedIssueTypeMap = {};
     for (const it of issueTypes) {
       cachedIssueTypeMap[it.value] = it.label;
@@ -60,10 +61,10 @@ async function getIssueTypeMaps() {
     for (const sit of subIssueTypes) {
       cachedSubIssueTypeMap[sit.value] = sit.label;
     }
-    console.log(`[Autotask] Issue type map loaded: ${Object.keys(cachedIssueTypeMap).length} types, ${Object.keys(cachedSubIssueTypeMap).length} sub-types`);
+    console.log(`[Fabric] Issue type map loaded: ${Object.keys(cachedIssueTypeMap).length} types, ${Object.keys(cachedSubIssueTypeMap).length} sub-types`);
     return { issueTypeMap: cachedIssueTypeMap, subIssueTypeMap: cachedSubIssueTypeMap };
   } catch (err) {
-    console.warn(`[Autotask] Failed to fetch issue type picklists: ${err.message}`);
+    console.warn(`[Fabric] Failed to fetch issue type picklists: ${err.message}`);
     return { issueTypeMap: null, subIssueTypeMap: null };
   }
 }
@@ -71,11 +72,13 @@ async function getIssueTypeMaps() {
 // ── API Routes ──
 
 /**
- * GET /api/status - Check if Autotask is configured
+ * GET /api/status - Check if Fabric SQL is configured
  */
 app.get('/api/status', (req, res) => {
   res.json({
-    autotaskConfigured: !!autotaskClient,
+    fabricConfigured: !!fabricClient,
+    // Keep legacy key for frontend compatibility
+    autotaskConfigured: !!fabricClient,
     aiConfigured: isAIConfigured(),
     serverTime: new Date().toISOString(),
     scriptCounts: listScripts(),
@@ -88,9 +91,9 @@ app.get('/api/status', (req, res) => {
  */
 app.get('/api/tickets', async (req, res) => {
   try {
-    if (!autotaskClient) {
+    if (!fabricClient) {
       return res.status(503).json({
-        error: 'Autotask API not configured. Set credentials in .env file.',
+        error: 'Fabric SQL not configured. Set FABRIC_SQL_SERVER and FABRIC_DATABASE in Application settings.',
       });
     }
 
@@ -109,26 +112,26 @@ app.get('/api/tickets', async (req, res) => {
 
     let tickets = [];
     if (includeCompleted === 'true') {
-      // Fetch ALL tickets (any status) so received counts match Autotask widgets
+      // Fetch ALL tickets (any status) so received counts match widgets
       if (queueIdList.length > 0) {
         const fetches = queueIdList.map(qid =>
-          autotaskClient.getAllTickets({ ...baseOpts, queueId: qid })
+          fabricClient.getAllTickets({ ...baseOpts, queueId: qid })
         );
         const results = await Promise.all(fetches);
         tickets = results.flat();
       } else {
-        tickets = await autotaskClient.getAllTickets(baseOpts);
+        tickets = await fabricClient.getAllTickets(baseOpts);
       }
     } else {
       // Open tickets only (excludes Complete and Waiting Customer)
       if (queueIdList.length > 0) {
         const fetches = queueIdList.map(qid =>
-          autotaskClient.getOpenTickets({ ...baseOpts, queueId: qid })
+          fabricClient.getOpenTickets({ ...baseOpts, queueId: qid })
         );
         const results = await Promise.all(fetches);
         tickets = results.flat();
       } else {
-        tickets = await autotaskClient.getOpenTickets(baseOpts);
+        tickets = await fabricClient.getOpenTickets(baseOpts);
       }
     }
 
@@ -140,7 +143,7 @@ app.get('/api/tickets', async (req, res) => {
     if (enrichTimeEntries && tickets.length > 0) {
       try {
         const ticketIds = tickets.map(t => t.id).filter(Boolean);
-        hoursMap = await autotaskClient.getTimeEntriesForTickets(ticketIds);
+        hoursMap = await fabricClient.getTimeEntriesForTickets(ticketIds);
         const ticketsWithHours = Object.keys(hoursMap).length;
         console.log(`[API] Time entries: ${ticketsWithHours}/${ticketIds.length} tickets have worked hours`);
       } catch (err) {
@@ -148,13 +151,13 @@ app.get('/api/tickets', async (req, res) => {
       }
     }
 
-    // Resolve company names from Autotask
+    // Resolve company names from Fabric
     let companyNameMap = {};
-    if (autotaskClient) {
+    if (fabricClient) {
       try {
         const companyIds = [...new Set(tickets.map(t => t.companyID).filter(Boolean))];
         if (companyIds.length > 0) {
-          companyNameMap = await autotaskClient.getCompanyNames(companyIds);
+          companyNameMap = await fabricClient.getCompanyNames(companyIds);
           console.log(`[API] Company names resolved: ${Object.keys(companyNameMap).length}/${companyIds.length}`);
         }
       } catch (err) {
@@ -167,10 +170,10 @@ app.get('/api/tickets', async (req, res) => {
 
     // Fetch internal notes to detect PIA usage
     let piaTicketIds = new Set();
-    if (autotaskClient && tickets.length > 0) {
+    if (fabricClient && tickets.length > 0) {
       try {
         const ticketIds = tickets.map(t => t.id).filter(Boolean);
-        const notesMap = await autotaskClient.getNotesForTickets(ticketIds);
+        const notesMap = await fabricClient.getNotesForTickets(ticketIds);
 
         // PIA API account identifiers (configurable via env, comma-separated)
         // Can match by resource ID, resource name, or text in note body
@@ -312,10 +315,10 @@ app.get('/api/categories', (req, res) => {
  */
 app.get('/api/queues', async (req, res) => {
   try {
-    if (!autotaskClient) {
-      return res.status(503).json({ error: 'Autotask API not configured.' });
+    if (!fabricClient) {
+      return res.status(503).json({ error: 'Fabric SQL not configured.' });
     }
-    const queues = await autotaskClient.getQueues();
+    const queues = await fabricClient.getQueues();
     res.json(queues);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -327,10 +330,10 @@ app.get('/api/queues', async (req, res) => {
  */
 app.get('/api/resources', async (req, res) => {
   try {
-    if (!autotaskClient) {
-      return res.status(503).json({ error: 'Autotask API not configured.' });
+    if (!fabricClient) {
+      return res.status(503).json({ error: 'Fabric SQL not configured.' });
     }
-    const resources = await autotaskClient.getResources();
+    const resources = await fabricClient.getResources();
     res.json(resources);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -461,8 +464,8 @@ app.post('/api/ai-analyze', async (req, res) => {
  * Used to set validated quick hitters to "do it now" priority.
  */
 app.post('/api/tickets/update-priority', async (req, res) => {
-  if (!autotaskClient) {
-    return res.status(503).json({ error: 'Autotask not configured. Cannot update tickets in demo mode.' });
+  if (!fabricClient) {
+    return res.status(503).json({ error: 'Fabric SQL not configured. Cannot update tickets in demo mode.' });
   }
 
   const { ticketIds, priority } = req.body;
@@ -477,7 +480,7 @@ app.post('/api/tickets/update-priority', async (req, res) => {
 
   for (const ticketId of ticketIds) {
     try {
-      await autotaskClient.updateTicket(ticketId, { priority });
+      await fabricClient.updateTicket(ticketId, { priority });
       results.updated.push(ticketId);
     } catch (err) {
       console.warn(`[API] Failed to update ticket ${ticketId} priority: ${err.message}`);
@@ -491,6 +494,6 @@ app.post('/api/tickets/update-priority', async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`IntermixIT Ticket Analyzer running on http://localhost:${PORT}`);
-  console.log(`Autotask API: ${autotaskClient ? 'Configured' : 'Not configured (demo mode)'}`);
+  console.log(`Fabric SQL: ${fabricClient ? 'Configured' : 'Not configured (demo mode)'}`);
   console.log(`AI Analysis: ${isAIConfigured() ? 'Configured (Claude)' : 'Not configured — set ANTHROPIC_API_KEY for AI features'}`);
 });
