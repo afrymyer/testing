@@ -1,26 +1,21 @@
 const sql = require('mssql');
-const { ClientSecretCredential } = require('@azure/identity');
 
 class FabricClient {
   constructor({ sqlServer, database, tenantId, clientId, clientSecret }) {
     this.sqlServer = sqlServer;
     this.database = database;
-    this.credential = new ClientSecretCredential(tenantId, clientId, clientSecret);
+    this.tenantId = tenantId;
+    this.clientId = clientId;
+    this.clientSecret = clientSecret;
     this.pool = null;
 
     console.log(`[Fabric] Client initialized — Server: ${sqlServer}, Database: ${database}`);
   }
 
   /**
-   * Get an Azure AD access token for the Fabric SQL endpoint.
-   */
-  async getAccessToken() {
-    const tokenResponse = await this.credential.getToken('https://database.windows.net/.default');
-    return tokenResponse.token;
-  }
-
-  /**
    * Get or create a connection pool to the Fabric SQL endpoint.
+   * Uses azure-active-directory-service-principal-secret auth so tedious
+   * handles token acquisition internally (compatible with Node 22 / OpenSSL 3.x).
    */
   async getPool() {
     if (this.pool && this.pool.connected) return this.pool;
@@ -31,9 +26,7 @@ class FabricClient {
       this.pool = null;
     }
 
-    console.log(`[Fabric] Acquiring access token...`);
-    const token = await this.getAccessToken();
-    console.log(`[Fabric] Token acquired, connecting to ${this.sqlServer}...`);
+    console.log(`[Fabric] Connecting to ${this.sqlServer}...`);
 
     const config = {
       server: this.sqlServer,
@@ -53,15 +46,15 @@ class FabricClient {
         acquireTimeoutMillis: 30000,
       },
       authentication: {
-        type: 'azure-active-directory-access-token',
+        type: 'azure-active-directory-service-principal-secret',
         options: {
-          token,
+          clientId: this.clientId,
+          clientSecret: this.clientSecret,
+          tenantId: this.tenantId,
         },
       },
     };
 
-    // Use explicit ConnectionPool instead of global sql.connect()
-    // to avoid conflicts when tokens refresh
     const pool = new sql.ConnectionPool(config);
     this.pool = await pool.connect();
 
@@ -71,15 +64,6 @@ class FabricClient {
       try { this.pool.close(); } catch (_) {}
       this.pool = null;
     });
-
-    // Refresh the pool when token expires (tokens last ~1 hour)
-    if (this._tokenTimer) clearTimeout(this._tokenTimer);
-    this._tokenTimer = setTimeout(() => {
-      if (this.pool) {
-        this.pool.close().catch(() => {});
-        this.pool = null;
-      }
-    }, 50 * 60 * 1000); // Refresh after 50 minutes
 
     console.log(`[Fabric] Connected to SQL endpoint`);
     return this.pool;
