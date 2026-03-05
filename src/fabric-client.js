@@ -45,8 +45,11 @@ class FabricClient {
         encrypt: true,
         trustServerCertificate: false,
         enableArithAbort: true,
-        // Fabric DW endpoints require TDS 7.4+
-        tdsVersion: '7_4',
+        // Node 22 (OpenSSL 3.x) needs explicit TLS 1.2 for Fabric SQL endpoints
+        cryptoCredentialsDetails: {
+          minVersion: 'TLSv1.2',
+          maxVersion: 'TLSv1.2',
+        },
       },
       pool: {
         max: 5,
