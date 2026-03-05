@@ -25,6 +25,12 @@ class FabricClient {
   async getPool() {
     if (this.pool && this.pool.connected) return this.pool;
 
+    // Close stale pool if it exists but isn't connected
+    if (this.pool) {
+      try { await this.pool.close(); } catch (_) {}
+      this.pool = null;
+    }
+
     const token = await this.getAccessToken();
     const config = {
       server: this.sqlServer,
@@ -32,6 +38,14 @@ class FabricClient {
       options: {
         encrypt: true,
         trustServerCertificate: false,
+        connectTimeout: 30000,
+        requestTimeout: 60000,
+      },
+      pool: {
+        max: 10,
+        min: 0,
+        idleTimeoutMillis: 60000,
+        acquireTimeoutMillis: 30000,
       },
       authentication: {
         type: 'azure-active-directory-access-token',
@@ -43,8 +57,15 @@ class FabricClient {
 
     this.pool = await sql.connect(config);
 
+    // Handle unexpected pool errors to prevent crashes
+    this.pool.on('error', (err) => {
+      console.warn(`[Fabric] Pool error (will reconnect on next query): ${err.message}`);
+      try { this.pool.close(); } catch (_) {}
+      this.pool = null;
+    });
+
     // Refresh the pool when token expires (tokens last ~1 hour)
-    setTimeout(() => {
+    this._tokenTimer = setTimeout(() => {
       if (this.pool) {
         this.pool.close().catch(() => {});
         this.pool = null;
@@ -57,17 +78,35 @@ class FabricClient {
 
   /**
    * Execute a SQL query and return the recordset.
+   * Retries once on connection errors (socket hang up, ECONNRESET, etc.)
    */
   async query(queryText, params = {}) {
-    const pool = await this.getPool();
-    const request = pool.request();
+    const maxRetries = 1;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const pool = await this.getPool();
+        const request = pool.request();
 
-    for (const [name, value] of Object.entries(params)) {
-      request.input(name, value);
+        for (const [name, value] of Object.entries(params)) {
+          request.input(name, value);
+        }
+
+        const result = await request.query(queryText);
+        return result.recordset || [];
+      } catch (err) {
+        const isConnectionError = /socket hang up|ECONNRESET|ECONN|connection.*lost|connection.*closed/i.test(err.message);
+        if (isConnectionError && attempt < maxRetries) {
+          console.warn(`[Fabric] Connection error (retrying): ${err.message}`);
+          // Force pool reset so next getPool() creates a fresh connection
+          if (this.pool) {
+            try { await this.pool.close(); } catch (_) {}
+            this.pool = null;
+          }
+          continue;
+        }
+        throw err;
+      }
     }
-
-    const result = await request.query(queryText);
-    return result.recordset || [];
   }
 
   /**
