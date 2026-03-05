@@ -39,17 +39,12 @@ class FabricClient {
       server: this.sqlServer,
       port: 1433,
       database: this.database,
-      connectionTimeout: 30000,
-      requestTimeout: 60000,
+      connectionTimeout: 15000,
+      requestTimeout: 30000,
       options: {
         encrypt: true,
         trustServerCertificate: false,
         enableArithAbort: true,
-        // Node 22 (OpenSSL 3.x) needs explicit TLS 1.2 for Fabric SQL endpoints
-        cryptoCredentialsDetails: {
-          minVersion: 'TLSv1.2',
-          maxVersion: 'TLSv1.2',
-        },
       },
       pool: {
         max: 5,
@@ -95,7 +90,7 @@ class FabricClient {
    * Retries up to 3 times on connection errors with exponential backoff.
    */
   async query(queryText, params = {}) {
-    const maxRetries = 3;
+    const maxRetries = 1;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
         const pool = await this.getPool();
