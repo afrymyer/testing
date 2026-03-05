@@ -37,6 +37,7 @@ class FabricClient {
 
     const config = {
       server: this.sqlServer,
+      port: 1433,
       database: this.database,
       connectionTimeout: 30000,
       requestTimeout: 60000,
@@ -44,6 +45,8 @@ class FabricClient {
         encrypt: true,
         trustServerCertificate: false,
         enableArithAbort: true,
+        // Fabric DW endpoints require TDS 7.4+
+        tdsVersion: '7_4',
       },
       pool: {
         max: 5,
@@ -59,7 +62,10 @@ class FabricClient {
       },
     };
 
-    this.pool = await sql.connect(config);
+    // Use explicit ConnectionPool instead of global sql.connect()
+    // to avoid conflicts when tokens refresh
+    const pool = new sql.ConnectionPool(config);
+    this.pool = await pool.connect();
 
     // Handle unexpected pool errors to prevent crashes
     this.pool.on('error', (err) => {

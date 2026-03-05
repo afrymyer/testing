@@ -98,8 +98,15 @@ app.get('/api/health', async (req, res) => {
     const elapsed = Date.now() - start;
     res.json({ status: 'ok', latencyMs: elapsed, server: process.env.FABRIC_SQL_SERVER });
   } catch (err) {
-    console.error('[Health] Fabric connectivity test failed:', err.message);
-    res.status(500).json({ status: 'error', error: err.message, server: process.env.FABRIC_SQL_SERVER });
+    console.error('[Health] Fabric connectivity test failed:', err.message, err.code || '', err.stack);
+    res.status(500).json({
+      status: 'error',
+      error: err.message,
+      code: err.code || null,
+      server: process.env.FABRIC_SQL_SERVER,
+      database: process.env.FABRIC_DATABASE,
+      nodeVersion: process.version,
+    });
   }
 });
 
