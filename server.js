@@ -94,9 +94,29 @@ app.get('/api/health', async (req, res) => {
   }
   try {
     const start = Date.now();
+
+    // Test basic connectivity
     await fabricClient.query('SELECT 1 AS ok');
+    const connectMs = Date.now() - start;
+
+    // List all tables visible to this connection
+    const tables = await fabricClient.query(
+      `SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_TYPE
+       FROM INFORMATION_SCHEMA.TABLES
+       ORDER BY TABLE_SCHEMA, TABLE_NAME`
+    );
+
     const elapsed = Date.now() - start;
-    res.json({ status: 'ok', latencyMs: elapsed, server: process.env.FABRIC_SQL_SERVER });
+    res.json({
+      status: 'ok',
+      connectMs,
+      totalMs: elapsed,
+      server: process.env.FABRIC_SQL_SERVER,
+      database: process.env.FABRIC_DATABASE,
+      nodeVersion: process.version,
+      tableCount: tables.length,
+      tables: tables.map(t => `${t.TABLE_SCHEMA}.${t.TABLE_NAME} (${t.TABLE_TYPE})`),
+    });
   } catch (err) {
     console.error('[Health] Fabric connectivity test failed:', err.message, err.code || '', err.stack);
     res.status(500).json({
