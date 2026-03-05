@@ -31,20 +31,24 @@ class FabricClient {
       this.pool = null;
     }
 
+    console.log(`[Fabric] Acquiring access token...`);
     const token = await this.getAccessToken();
+    console.log(`[Fabric] Token acquired, connecting to ${this.sqlServer}...`);
+
     const config = {
       server: this.sqlServer,
       database: this.database,
+      connectionTimeout: 30000,
+      requestTimeout: 60000,
       options: {
         encrypt: true,
         trustServerCertificate: false,
-        connectTimeout: 30000,
-        requestTimeout: 60000,
+        enableArithAbort: true,
       },
       pool: {
-        max: 10,
+        max: 5,
         min: 0,
-        idleTimeoutMillis: 60000,
+        idleTimeoutMillis: 30000,
         acquireTimeoutMillis: 30000,
       },
       authentication: {
@@ -65,6 +69,7 @@ class FabricClient {
     });
 
     // Refresh the pool when token expires (tokens last ~1 hour)
+    if (this._tokenTimer) clearTimeout(this._tokenTimer);
     this._tokenTimer = setTimeout(() => {
       if (this.pool) {
         this.pool.close().catch(() => {});
@@ -78,10 +83,10 @@ class FabricClient {
 
   /**
    * Execute a SQL query and return the recordset.
-   * Retries once on connection errors (socket hang up, ECONNRESET, etc.)
+   * Retries up to 3 times on connection errors with exponential backoff.
    */
   async query(queryText, params = {}) {
-    const maxRetries = 1;
+    const maxRetries = 3;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
         const pool = await this.getPool();
@@ -94,16 +99,19 @@ class FabricClient {
         const result = await request.query(queryText);
         return result.recordset || [];
       } catch (err) {
-        const isConnectionError = /socket hang up|ECONNRESET|ECONN|connection.*lost|connection.*closed/i.test(err.message);
-        if (isConnectionError && attempt < maxRetries) {
-          console.warn(`[Fabric] Connection error (retrying): ${err.message}`);
+        const isRetryable = /socket hang up|ECONNRESET|ECONN|ESOCKET|ETIMEOUT|connection.*lost|connection.*closed|network/i.test(err.message);
+        if (isRetryable && attempt < maxRetries) {
+          const delay = Math.pow(2, attempt) * 1000; // 1s, 2s, 4s
+          console.warn(`[Fabric] Connection error on attempt ${attempt + 1}/${maxRetries + 1} (retrying in ${delay}ms): ${err.message}`);
           // Force pool reset so next getPool() creates a fresh connection
           if (this.pool) {
             try { await this.pool.close(); } catch (_) {}
             this.pool = null;
           }
+          await new Promise(resolve => setTimeout(resolve, delay));
           continue;
         }
+        console.error(`[Fabric] Query failed after ${attempt + 1} attempt(s): ${err.message}`);
         throw err;
       }
     }

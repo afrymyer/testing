@@ -86,6 +86,24 @@ app.get('/api/status', (req, res) => {
 });
 
 /**
+ * GET /api/health - Test Fabric SQL connectivity (diagnostic endpoint)
+ */
+app.get('/api/health', async (req, res) => {
+  if (!fabricClient) {
+    return res.json({ status: 'no-fabric', message: 'Fabric SQL not configured' });
+  }
+  try {
+    const start = Date.now();
+    await fabricClient.query('SELECT 1 AS ok');
+    const elapsed = Date.now() - start;
+    res.json({ status: 'ok', latencyMs: elapsed, server: process.env.FABRIC_SQL_SERVER });
+  } catch (err) {
+    console.error('[Health] Fabric connectivity test failed:', err.message);
+    res.status(500).json({ status: 'error', error: err.message, server: process.env.FABRIC_SQL_SERVER });
+  }
+});
+
+/**
  * GET /api/tickets - Fetch and analyze open tickets from Autotask
  * Query params: queueId, maxRecords, dateFrom, dateTo, includeCompleted
  */
