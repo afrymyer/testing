@@ -47,10 +47,6 @@ class FabricClient {
         trustServerCertificate: false,
         connectTimeout: 30000,
         requestTimeout: 60000,
-        cryptoCredentialsDetails: {
-          minVersion: 'TLSv1.2',
-          ciphers: 'DEFAULT:@SECLEVEL=0',
-        },
       },
       pool: {
         max: 10,
