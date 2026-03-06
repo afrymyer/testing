@@ -1,10 +1,17 @@
+console.log('[Startup] server.js loading...');
 require('dotenv').config();
+console.log('[Startup] dotenv loaded');
 const express = require('express');
+console.log('[Startup] express loaded');
 const path = require('path');
 const FabricClient = require('./src/fabric-client');
+console.log('[Startup] fabric-client loaded');
 const { analyzeTickets, getSummary, getDeepAnalytics, CATEGORY_PATTERNS } = require('./src/ticket-analyzer');
+console.log('[Startup] ticket-analyzer loaded');
 const { loadScript, listScripts } = require('./src/script-mapper');
+console.log('[Startup] script-mapper loaded');
 const { analyzeWithAI, mergeAIResults, generateBatchInsights, isConfigured: isAIConfigured } = require('./src/ai-analyzer');
+console.log('[Startup] ai-analyzer loaded');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
