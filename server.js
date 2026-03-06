@@ -86,6 +86,53 @@ app.get('/api/status', (req, res) => {
 });
 
 /**
+ * GET /api/tls-test - Raw TLS diagnostic to Fabric SQL endpoint
+ */
+app.get('/api/tls-test', async (req, res) => {
+  const tls = require('tls');
+  const server = process.env.FABRIC_SQL_SERVER;
+  if (!server) return res.json({ error: 'FABRIC_SQL_SERVER not set' });
+
+  const results = {};
+
+  // Test 1: Raw TLS connection on port 1433
+  try {
+    const tlsResult = await new Promise((resolve, reject) => {
+      const start = Date.now();
+      const socket = tls.connect({
+        host: server,
+        port: 1433,
+        servername: server,
+        rejectUnauthorized: true,
+        minVersion: 'TLSv1.2',
+      }, () => {
+        const info = {
+          connected: true,
+          elapsed: Date.now() - start,
+          protocol: socket.getProtocol(),
+          cipher: socket.getCipher(),
+          peerCert: socket.getPeerCertificate()?.subject,
+        };
+        socket.destroy();
+        resolve(info);
+      });
+      socket.setTimeout(10000);
+      socket.on('timeout', () => { socket.destroy(); reject(new Error('TLS timeout (10s)')); });
+      socket.on('error', (err) => reject(err));
+    });
+    results.rawTls = tlsResult;
+  } catch (err) {
+    results.rawTls = { connected: false, error: err.message, code: err.code };
+  }
+
+  // Test 2: Check OpenSSL version
+  results.openssl = process.versions.openssl;
+  results.nodeVersion = process.version;
+
+  res.json(results);
+});
+
+/**
  * GET /api/health - Test Fabric SQL connectivity (diagnostic endpoint)
  */
 app.get('/api/health', async (req, res) => {

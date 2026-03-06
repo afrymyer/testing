@@ -49,7 +49,7 @@ class FabricClient {
       connectionTimeout: 30000,
       requestTimeout: 30000,
       options: {
-        encrypt: true,
+        encrypt: 'strict',
         trustServerCertificate: false,
         enableArithAbort: true,
       },
