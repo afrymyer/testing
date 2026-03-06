@@ -21,7 +21,7 @@ jobs:
       - name: Set up Node.js version
         uses: actions/setup-node@v3
         with:
-          node-version: '22.x'
+          node-version: '20.x'
 
       - name: npm install, build, and test
         run: |
@@ -54,6 +54,11 @@ jobs:
           client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_AD3CF49FF1E745FE9B67BDF17C5C69DA }}
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_C1525BAB44EB44E390A67961BCCB7402 }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_0AA54FE1D59F4911B0BB61FB4CC08E82 }}
+
+      - name: Set App Service to Node 20 runtime
+        run: |
+          RG=$(az webapp show --name imixservice --query resourceGroup -o tsv)
+          az webapp config set --name imixservice --resource-group "$RG" --linux-fx-version "NODE|20-lts"
 
       - name: 'Deploy to Azure Web App'
         id: deploy-to-webapp

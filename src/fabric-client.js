@@ -52,12 +52,6 @@ class FabricClient {
         encrypt: true,
         trustServerCertificate: false,
         enableArithAbort: true,
-        // Explicit TLS settings to fix Node 22 / OpenSSL 3.x "socket hang up"
-        cryptoCredentialsDetails: {
-          minVersion: 'TLSv1.2',
-          // Lower OpenSSL security level to allow ciphers Fabric SQL expects
-          ciphers: 'DEFAULT:@SECLEVEL=1',
-        },
       },
       pool: {
         max: 5,
