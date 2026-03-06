@@ -1,4 +1,5 @@
 const sql = require('mssql');
+const { ClientSecretCredential } = require('@azure/identity');
 
 class FabricClient {
   constructor({ sqlServer, database, tenantId, clientId, clientSecret }) {
@@ -8,14 +9,23 @@ class FabricClient {
     this.clientId = clientId;
     this.clientSecret = clientSecret;
     this.pool = null;
+    this.credential = new ClientSecretCredential(tenantId, clientId, clientSecret);
 
     console.log(`[Fabric] Client initialized — Server: ${sqlServer}, Database: ${database}`);
   }
 
   /**
+   * Acquire a fresh Azure AD access token for the SQL scope.
+   */
+  async getAccessToken() {
+    const tokenResponse = await this.credential.getToken('https://database.windows.net/.default');
+    return tokenResponse.token;
+  }
+
+  /**
    * Get or create a connection pool to the Fabric SQL endpoint.
-   * Uses azure-active-directory-service-principal-secret auth so tedious
-   * handles token acquisition internally (compatible with Node 22 / OpenSSL 3.x).
+   * Uses azure-active-directory-access-token auth with manually acquired token
+   * and explicit TLS settings for Node 22 / OpenSSL 3.x compatibility.
    */
   async getPool() {
     if (this.pool && this.pool.connected) return this.pool;
@@ -28,16 +38,26 @@ class FabricClient {
 
     console.log(`[Fabric] Connecting to ${this.sqlServer}...`);
 
+    // Acquire token before connecting
+    const token = await this.getAccessToken();
+    console.log(`[Fabric] Token acquired (length=${token.length})`);
+
     const config = {
       server: this.sqlServer,
       port: 1433,
       database: this.database,
-      connectionTimeout: 15000,
+      connectionTimeout: 30000,
       requestTimeout: 30000,
       options: {
         encrypt: true,
         trustServerCertificate: false,
         enableArithAbort: true,
+        // Explicit TLS settings to fix Node 22 / OpenSSL 3.x "socket hang up"
+        cryptoCredentialsDetails: {
+          minVersion: 'TLSv1.2',
+          // Lower OpenSSL security level to allow ciphers Fabric SQL expects
+          ciphers: 'DEFAULT:@SECLEVEL=1',
+        },
       },
       pool: {
         max: 5,
@@ -46,11 +66,9 @@ class FabricClient {
         acquireTimeoutMillis: 30000,
       },
       authentication: {
-        type: 'azure-active-directory-service-principal-secret',
+        type: 'azure-active-directory-access-token',
         options: {
-          clientId: this.clientId,
-          clientSecret: this.clientSecret,
-          tenantId: this.tenantId,
+          token,
         },
       },
     };
@@ -71,7 +89,7 @@ class FabricClient {
 
   /**
    * Execute a SQL query and return the recordset.
-   * Retries up to 3 times on connection errors with exponential backoff.
+   * Retries once on connection errors with backoff.
    */
   async query(queryText, params = {}) {
     const maxRetries = 1;
@@ -89,9 +107,9 @@ class FabricClient {
       } catch (err) {
         const isRetryable = /socket hang up|ECONNRESET|ECONN|ESOCKET|ETIMEOUT|connection.*lost|connection.*closed|network/i.test(err.message);
         if (isRetryable && attempt < maxRetries) {
-          const delay = Math.pow(2, attempt) * 1000; // 1s, 2s, 4s
-          console.warn(`[Fabric] Connection error on attempt ${attempt + 1}/${maxRetries + 1} (retrying in ${delay}ms): ${err.message}`);
-          // Force pool reset so next getPool() creates a fresh connection
+          const delay = Math.pow(2, attempt) * 2000; // 2s, 4s
+          console.warn(`[Fabric] Connection error (retrying in ${delay}ms): ${err.message}`);
+          // Force pool reset so next getPool() creates a fresh connection with new token
           if (this.pool) {
             try { await this.pool.close(); } catch (_) {}
             this.pool = null;
