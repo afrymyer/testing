@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PA Cyber Watch Feed - IntermixIT</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --surface: #1e293b;
+      --surface2: #334155;
+      --border: #475569;
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+      --accent: #3b82f6;
+      --accent-hover: #2563eb;
+      --high: #ef4444;
+      --high-bg: rgba(239,68,68,0.15);
+      --medium: #f59e0b;
+      --medium-bg: rgba(245,158,11,0.15);
+      --low: #3b82f6;
+      --low-bg: rgba(59,130,246,0.15);
+      --noise: #64748b;
+      --noise-bg: rgba(100,116,139,0.15);
+      --success: #22c55e;
+      --radius: 8px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+    .header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .header h1 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .header h1 .shield { color: var(--accent); font-size: 1.4rem; }
+    .header-actions { display: flex; gap: 8px; align-items: center; }
+    .btn {
+      padding: 8px 16px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface2);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 0.85rem;
+      transition: all 0.15s;
+    }
+    .btn:hover { background: var(--border); }
+    .btn-primary { background: var(--accent); border-color: var(--accent); }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .status-dot {
+      display: inline-block;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      margin-right: 6px;
+    }
+    .status-dot.active { background: var(--success); }
+    .status-dot.idle { background: var(--noise); }
+
+    .main { padding: 24px; max-width: 1400px; margin: 0 auto; }
+
+    /* Stats cards */
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .stat-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+    .stat-card.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+    .stat-card .stat-value {
+      font-size: 2rem;
+      font-weight: 700;
+      line-height: 1;
+    }
+    .stat-card .stat-label {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .stat-card.high .stat-value { color: var(--high); }
+    .stat-card.high.active { border-color: var(--high); box-shadow: 0 0 0 1px var(--high); }
+    .stat-card.medium .stat-value { color: var(--medium); }
+    .stat-card.medium.active { border-color: var(--medium); box-shadow: 0 0 0 1px var(--medium); }
+    .stat-card.low .stat-value { color: var(--low); }
+    .stat-card.low.active { border-color: var(--low); box-shadow: 0 0 0 1px var(--low); }
+
+    /* Filters */
+    .filters {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-bottom: 24px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+    }
+    .filters label {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .filters select, .filters input {
+      padding: 6px 10px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text);
+      font-size: 0.85rem;
+    }
+
+    /* Incident list */
+    .incident-list { display: flex; flex-direction: column; gap: 12px; }
+    .incident-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      transition: border-color 0.15s;
+    }
+    .incident-card:hover { border-color: var(--accent); }
+    .incident-card.band-High { border-left: 4px solid var(--high); }
+    .incident-card.band-Medium { border-left: 4px solid var(--medium); }
+    .incident-card.band-Low { border-left: 4px solid var(--low); }
+    .incident-card.band-Noise { border-left: 4px solid var(--noise); }
+
+    .incident-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+    .incident-entity {
+      font-size: 1.1rem;
+      font-weight: 600;
+    }
+    .incident-badges { display: flex; gap: 6px; flex-wrap: wrap; }
+    .badge {
+      font-size: 0.7rem;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    .badge.high { background: var(--high-bg); color: var(--high); }
+    .badge.medium { background: var(--medium-bg); color: var(--medium); }
+    .badge.low { background: var(--low-bg); color: var(--low); }
+    .badge.noise { background: var(--noise-bg); color: var(--noise); }
+    .badge.type {
+      background: rgba(59,130,246,0.15);
+      color: var(--accent);
+    }
+    .badge.client {
+      background: rgba(34,197,94,0.15);
+      color: var(--success);
+    }
+
+    .incident-meta {
+      display: flex;
+      gap: 16px;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+    }
+    .incident-headline {
+      font-size: 0.9rem;
+      margin-bottom: 8px;
+    }
+    .incident-headline a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+    .incident-headline a:hover { text-decoration: underline; }
+
+    .incident-summary {
+      background: var(--surface2);
+      border-radius: 4px;
+      padding: 12px;
+      font-size: 0.8rem;
+      white-space: pre-wrap;
+      line-height: 1.6;
+      margin-top: 8px;
+    }
+    .incident-sources {
+      margin-top: 8px;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+    .incident-sources a { color: var(--text-muted); }
+    .incident-sources a:hover { color: var(--accent); }
+
+    .score-bar {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .score-bar-track {
+      width: 60px;
+      height: 6px;
+      background: var(--surface2);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .score-bar-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.3s;
+    }
+    .score-bar-fill.high { background: var(--high); }
+    .score-bar-fill.medium { background: var(--medium); }
+    .score-bar-fill.low { background: var(--low); }
+    .score-bar-fill.noise { background: var(--noise); }
+
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--text-muted);
+    }
+    .empty-state h2 { margin-bottom: 8px; color: var(--text); }
+
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: var(--text-muted);
+    }
+    .spinner {
+      display: inline-block;
+      width: 24px; height: 24px;
+      border: 3px solid var(--surface2);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Entity management modal */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-overlay.active { display: flex; }
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      width: 500px;
+      max-width: 90vw;
+      max-height: 80vh;
+      overflow-y: auto;
+    }
+    .modal h2 { margin-bottom: 16px; }
+    .form-group {
+      margin-bottom: 12px;
+    }
+    .form-group label {
+      display: block;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+    .form-group input, .form-group select {
+      width: 100%;
+      padding: 8px 10px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text);
+      font-size: 0.85rem;
+    }
+    .modal-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      margin-top: 16px;
+    }
+
+    /* Pipeline diagram */
+    .pipeline {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px 24px;
+      margin-bottom: 24px;
+      overflow-x: auto;
+    }
+    .pipeline-title {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      margin-bottom: 14px;
+    }
+    .pipeline-flow {
+      display: flex;
+      align-items: stretch;
+      gap: 0;
+      min-width: min-content;
+    }
+    .pipeline-stage {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      flex: 1;
+      min-width: 130px;
+      position: relative;
+    }
+    .pipeline-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2rem;
+      margin-bottom: 8px;
+      position: relative;
+      z-index: 2;
+    }
+    .pipeline-stage:nth-child(1) .pipeline-icon { background: rgba(59,130,246,0.2); color: #60a5fa; }
+    .pipeline-stage:nth-child(2) .pipeline-icon { background: rgba(168,85,247,0.2); color: #c084fc; }
+    .pipeline-stage:nth-child(3) .pipeline-icon { background: rgba(245,158,11,0.2); color: #fbbf24; }
+    .pipeline-stage:nth-child(4) .pipeline-icon { background: rgba(34,197,94,0.2); color: #4ade80; }
+    .pipeline-stage:nth-child(5) .pipeline-icon { background: rgba(239,68,68,0.2); color: #f87171; }
+    .pipeline-stage-label {
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--text);
+      text-align: center;
+      margin-bottom: 4px;
+    }
+    .pipeline-subs {
+      font-size: 0.68rem;
+      color: var(--text-muted);
+      text-align: center;
+      line-height: 1.5;
+    }
+    .pipeline-arrow {
+      display: flex;
+      align-items: center;
+      padding: 0 2px;
+      margin-top: -18px;
+    }
+    .pipeline-arrow svg { color: var(--border); }
+
+    @media (max-width: 768px) {
+      .stats-row { grid-template-columns: repeat(2, 1fr); }
+      .header { flex-direction: column; align-items: flex-start; }
+      .pipeline-flow { flex-wrap: wrap; justify-content: center; gap: 8px; }
+      .pipeline-arrow { display: none; }
+      .pipeline-stage { min-width: 110px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>
+      <span class="shield">&#x1f6e1;</span>
+      PA Cyber Watch Feed
+    </h1>
+    <div class="header-actions">
+      <span id="feedStatus">
+        <span class="status-dot idle"></span>
+        <span class="status-text">Idle</span>
+      </span>
+      <button class="btn" id="btnRefresh" onclick="loadIncidents()">Refresh</button>
+      <button class="btn btn-primary" id="btnRunCycle" onclick="runCycle()">Run Scan</button>
+      <button class="btn" id="btnAddEntity" onclick="showAddEntity()">+ Entity</button>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="stats-row" id="statsRow">
+      <div class="stat-card" onclick="filterByStat('')" data-filter="">
+        <div class="stat-value" id="statTotal">-</div>
+        <div class="stat-label">Total Incidents</div>
+      </div>
+      <div class="stat-card high" onclick="filterByStat('High')" data-filter="High">
+        <div class="stat-value" id="statHigh">-</div>
+        <div class="stat-label">High Confidence</div>
+      </div>
+      <div class="stat-card medium" onclick="filterByStat('Medium')" data-filter="Medium">
+        <div class="stat-value" id="statMedium">-</div>
+        <div class="stat-label">Medium</div>
+      </div>
+      <div class="stat-card low" onclick="filterByStat('Low')" data-filter="Low">
+        <div class="stat-value" id="statLow">-</div>
+        <div class="stat-label">Low / Chatter</div>
+      </div>
+      <div class="stat-card" onclick="filterByStat('watched')" data-filter="watched">
+        <div class="stat-value" id="statEntities">-</div>
+        <div class="stat-label">Watched Entities</div>
+      </div>
+      <div class="stat-card" data-filter="sources">
+        <div class="stat-value" id="statSources">-</div>
+        <div class="stat-label">Raw Items Scanned</div>
+      </div>
+    </div>
+
+    <div class="pipeline">
+      <div class="pipeline-title">Detection Pipeline</div>
+      <div class="pipeline-flow">
+        <div class="pipeline-stage">
+          <div class="pipeline-icon">&#x1f4e1;</div>
+          <div class="pipeline-stage-label">Sources</div>
+          <div class="pipeline-subs">Google News RSS<br>GDELT Project<br>CISA Alerts &amp; KEV<br>PA Attorney General<br>BleepingComputer<br>SecurityWeek<br>DataBreaches.net<br>Ransomware.live<br>Have I Been Pwned<br>OTX / Shadowserver</div>
+        </div>
+        <div class="pipeline-arrow"><svg width="28" height="20" viewBox="0 0 28 20"><path d="M2 10h18m0 0l-6-5m6 5l-6 5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <div class="pipeline-stage">
+          <div class="pipeline-icon">&#x1f3af;</div>
+          <div class="pipeline-stage-label">Entity Matching</div>
+          <div class="pipeline-subs">PA organizations<br>Alias resolution<br>Fuzzy matching<br>Geography detection</div>
+        </div>
+        <div class="pipeline-arrow"><svg width="28" height="20" viewBox="0 0 28 20"><path d="M2 10h18m0 0l-6-5m6 5l-6 5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <div class="pipeline-stage">
+          <div class="pipeline-icon">&#x1f50d;</div>
+          <div class="pipeline-stage-label">Keyword Scoring</div>
+          <div class="pipeline-subs">Incident language<br>Threat classification<br>Cross-source validation</div>
+        </div>
+        <div class="pipeline-arrow"><svg width="28" height="20" viewBox="0 0 28 20"><path d="M2 10h18m0 0l-6-5m6 5l-6 5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <div class="pipeline-stage">
+          <div class="pipeline-icon">&#x1f4dd;</div>
+          <div class="pipeline-stage-label">AI Summarization</div>
+          <div class="pipeline-subs">Deduplication<br>Incident grouping<br>Analyst summaries</div>
+        </div>
+        <div class="pipeline-arrow"><svg width="28" height="20" viewBox="0 0 28 20"><path d="M2 10h18m0 0l-6-5m6 5l-6 5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <div class="pipeline-stage">
+          <div class="pipeline-icon">&#x1f6a8;</div>
+          <div class="pipeline-stage-label">Confidence Scoring</div>
+          <div class="pipeline-subs">0–100 scoring<br>Confidence bands<br>Alert routing</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="filters">
+      <label>
+        County
+        <select id="filterCounty" onchange="applyFilters()">
+          <option value="">All Counties</option>
+        </select>
+      </label>
+      <label>
+        Entity Type
+        <select id="filterType" onchange="applyFilters()">
+          <option value="">All Types</option>
+          <option value="Township">Township</option>
+          <option value="Borough">Borough</option>
+          <option value="Municipality">Municipality</option>
+          <option value="County">County</option>
+          <option value="School District">School District</option>
+          <option value="Municipal Authority">Municipal Authority</option>
+          <option value="Water Authority">Water Authority</option>
+          <option value="Healthcare">Healthcare</option>
+          <option value="Utility">Utility</option>
+          <option value="Nonprofit">Nonprofit</option>
+        </select>
+      </label>
+      <label>
+        Confidence
+        <select id="filterBand" onchange="applyFilters()">
+          <option value="">All Levels</option>
+          <option value="High">High (75-100)</option>
+          <option value="Medium">Medium (50-74)</option>
+          <option value="Low">Low (25-49)</option>
+          <option value="Noise">Noise (&lt;25)</option>
+        </select>
+      </label>
+      <label>
+        Incident Type
+        <select id="filterIncident" onchange="applyFilters()">
+          <option value="">All Incidents</option>
+          <option value="RANSOMWARE">Ransomware</option>
+          <option value="DATA_BREACH">Data Breach</option>
+          <option value="PHISHING">Phishing</option>
+          <option value="NETWORK_INTRUSION">Network Intrusion</option>
+          <option value="OUTAGE">Service Outage</option>
+          <option value="MALWARE">Malware</option>
+          <option value="GENERAL">General Cyber</option>
+        </select>
+      </label>
+      <label>
+        <input type="checkbox" id="filterWatched" onchange="applyFilters()" style="width:auto;">
+        Watched Only
+      </label>
+    </div>
+
+    <div id="incidentList" class="incident-list">
+      <div class="empty-state">
+        <h2>No incidents loaded</h2>
+        <p>Click "Run Scan" to start a feed cycle, or "Refresh" to load existing data.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Entity Modal -->
+  <div class="modal-overlay" id="entityModal">
+    <div class="modal">
+      <h2>Add Watched Entity</h2>
+      <div class="form-group">
+        <label>Entity Name *</label>
+        <input type="text" id="entName" placeholder="e.g. Lower Swatara Township">
+      </div>
+      <div class="form-group">
+        <label>Entity Type</label>
+        <select id="entType">
+          <option value="Township">Township</option>
+          <option value="Borough">Borough</option>
+          <option value="Municipality">Municipality</option>
+          <option value="County">County</option>
+          <option value="School District">School District</option>
+          <option value="Municipal Authority">Municipal Authority</option>
+          <option value="Water Authority">Water Authority</option>
+          <option value="Sewer Authority">Sewer Authority</option>
+          <option value="Healthcare">Healthcare</option>
+          <option value="Utility">Utility</option>
+          <option value="Business">Business</option>
+          <option value="Nonprofit">Nonprofit</option>
+          <option value="Police Department">Police Department</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Aliases (comma-separated)</label>
+        <input type="text" id="entAliases" placeholder="e.g. Lower Swatara, Lower Swatara Twp">
+      </div>
+      <div class="form-group">
+        <label>County</label>
+        <input type="text" id="entCounty" placeholder="e.g. Dauphin">
+      </div>
+      <div class="form-group">
+        <label>Website</label>
+        <input type="text" id="entWebsite" placeholder="https://...">
+      </div>
+      <div class="form-group">
+        <label>
+          <input type="checkbox" id="entClient" style="width:auto;">
+          IntermixIT Prospect/Client
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" onclick="hideAddEntity()">Cancel</button>
+        <button class="btn btn-primary" onclick="addEntity()">Add Entity</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let allIncidents = [];
+    let feedState = null;
+    let activeStatFilter = null;
+
+    function filterByStat(filter) {
+      // Toggle off if already active
+      if (activeStatFilter === filter) {
+        activeStatFilter = null;
+      } else {
+        activeStatFilter = filter;
+      }
+
+      // Update active state on cards
+      document.querySelectorAll('.stat-card').forEach(card => {
+        card.classList.toggle('active', card.dataset.filter === activeStatFilter);
+      });
+
+      // Set the dropdown to match and reload
+      if (filter === 'High' || filter === 'Medium' || filter === 'Low') {
+        document.getElementById('filterBand').value = activeStatFilter || '';
+        loadIncidents();
+      } else if (filter === 'watched') {
+        document.getElementById('filterWatched').checked = !!activeStatFilter;
+        loadIncidents();
+      } else {
+        // "Total" = clear all filters
+        document.getElementById('filterBand').value = '';
+        document.getElementById('filterCounty').value = '';
+        document.getElementById('filterType').value = '';
+        document.getElementById('filterIncident').value = '';
+        document.getElementById('filterWatched').checked = false;
+        loadIncidents();
+      }
+    }
+
+    async function loadStatus() {
+      try {
+        const res = await fetch('/api/pa-feed/status');
+        feedState = await res.json();
+        updateStatsUI();
+        populateCountyFilter();
+      } catch (err) {
+        console.error('Status load error:', err);
+      }
+    }
+
+    async function loadIncidents() {
+      const list = document.getElementById('incidentList');
+      list.innerHTML = '<div class="loading"><div class="spinner"></div><p>Loading incidents...</p></div>';
+
+      try {
+        const params = buildFilterParams();
+        const res = await fetch(`/api/pa-feed/incidents?${params}`);
+        const data = await res.json();
+        allIncidents = data.incidents || [];
+        renderIncidents(allIncidents);
+        await loadStatus();
+      } catch (err) {
+        list.innerHTML = `<div class="empty-state"><h2>Error loading incidents</h2><p>${err.message}</p></div>`;
+      }
+    }
+
+    async function runCycle() {
+      const btn = document.getElementById('btnRunCycle');
+      btn.disabled = true;
+      btn.textContent = 'Scanning...';
+
+      const statusDot = document.querySelector('.status-dot');
+      const statusText = document.querySelector('.status-text');
+      statusDot.className = 'status-dot active';
+      statusText.textContent = 'Scanning...';
+
+      const list = document.getElementById('incidentList');
+      list.innerHTML = '<div class="loading"><div class="spinner"></div><p>Running feed cycle... scanning all 10 sources (news, GDELT, CISA, PA AG, cyber blogs, ransomware leaks, HIBP, OTX, Shadowserver).</p></div>';
+
+      try {
+        const res = await fetch('/api/pa-feed/run', { method: 'POST' });
+        const data = await res.json();
+        allIncidents = data.incidents || [];
+        renderIncidents(allIncidents);
+        await loadStatus();
+      } catch (err) {
+        list.innerHTML = `<div class="empty-state"><h2>Scan error</h2><p>${err.message}</p></div>`;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Run Scan';
+        statusDot.className = 'status-dot idle';
+        statusText.textContent = 'Idle';
+      }
+    }
+
+    function updateStatsUI() {
+      if (!feedState) return;
+      const s = feedState.stats || {};
+      document.getElementById('statTotal').textContent = s.total || 0;
+      document.getElementById('statHigh').textContent = s.high || 0;
+      document.getElementById('statMedium').textContent = s.medium || 0;
+      document.getElementById('statLow').textContent = (s.low || 0) + (s.noise || 0);
+      document.getElementById('statEntities').textContent = feedState.watchedCount || 0;
+      document.getElementById('statSources').textContent = s.rawItemCount || 0;
+    }
+
+    function populateCountyFilter() {
+      if (!feedState) return;
+      const select = document.getElementById('filterCounty');
+      const counties = ['Adams', 'Allegheny', 'Berks', 'Blair', 'Bucks', 'Butler', 'Cambria',
+        'Centre', 'Chester', 'Cumberland', 'Dauphin', 'Delaware', 'Erie', 'Franklin',
+        'Lackawanna', 'Lancaster', 'Lebanon', 'Lehigh', 'Luzerne', 'Lycoming',
+        'Montgomery', 'Northampton', 'Perry', 'Schuylkill', 'Westmoreland', 'York'];
+      // Only populate if not already done
+      if (select.options.length <= 1) {
+        for (const c of counties) {
+          const opt = document.createElement('option');
+          opt.value = c;
+          opt.textContent = c;
+          select.appendChild(opt);
+        }
+      }
+    }
+
+    function buildFilterParams() {
+      const params = new URLSearchParams();
+      const county = document.getElementById('filterCounty').value;
+      const type = document.getElementById('filterType').value;
+      const band = document.getElementById('filterBand').value;
+      const incident = document.getElementById('filterIncident').value;
+      const watched = document.getElementById('filterWatched').checked;
+      if (county) params.set('county', county);
+      if (type) params.set('entityType', type);
+      if (band) params.set('confidenceBand', band);
+      if (incident) params.set('incidentType', incident);
+      if (watched) params.set('watchedOnly', 'true');
+      return params.toString();
+    }
+
+    function applyFilters() {
+      loadIncidents();
+    }
+
+    function renderIncidents(incidents) {
+      const list = document.getElementById('incidentList');
+
+      if (!incidents || incidents.length === 0) {
+        list.innerHTML = `<div class="empty-state">
+          <h2>No incidents found</h2>
+          <p>No incidents match your current filters, or no scan has been run yet.</p>
+        </div>`;
+        return;
+      }
+
+      list.innerHTML = incidents.map(inc => {
+        const bandClass = (inc.confidenceBand || 'Noise').replace(/\s/g, '');
+        const bandLower = bandClass.toLowerCase();
+        const summary = inc.aiSummary?.text || '';
+        const sources = (inc.allSources || []).slice(0, 5);
+
+        return `<div class="incident-card band-${bandClass}">
+          <div class="incident-header">
+            <div>
+              <div class="incident-entity">${esc(inc.entityName || 'Unknown')}</div>
+            </div>
+            <div class="incident-badges">
+              <span class="badge ${bandLower}">${esc(inc.confidenceBand || 'N/A')}</span>
+              <span class="badge type">${esc(inc.incidentLabel || inc.incidentType || 'Cyber')}</span>
+              ${inc.mappedClientOrProspect ? '<span class="badge client">Client</span>' : ''}
+              <span class="score-bar">
+                <span class="score-bar-track">
+                  <span class="score-bar-fill ${bandLower}" style="width:${inc.confidenceScore || 0}%"></span>
+                </span>
+                <span style="font-size:0.75rem">${inc.confidenceScore || 0}</span>
+              </span>
+            </div>
+          </div>
+          <div class="incident-meta">
+            <span>${esc(inc.entityType || '')}</span>
+            <span>${esc(inc.county || '')} County</span>
+            <span>${esc(inc.category || '')}</span>
+            <span>${inc.crossSourceCount || 1} source(s)</span>
+            <span>${formatDate(inc.firstMention?.publishedAt || inc.latestUpdate?.publishedAt)}</span>
+          </div>
+          <div class="incident-headline">
+            ${inc.bestSource?.url
+              ? `<a href="${esc(inc.bestSource.url)}" target="_blank" rel="noopener">${esc(inc.bestSource.headline || inc.firstMention?.headline || '')}</a>`
+              : esc(inc.firstMention?.headline || '')}
+          </div>
+          ${summary ? `<div class="incident-summary">${esc(summary)}</div>` : ''}
+          ${sources.length > 0 ? `<div class="incident-sources">
+            Sources: ${sources.map(s => s.url ? `<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.sourceName)}</a>` : esc(s.sourceName)).join(' &middot; ')}
+          </div>` : ''}
+        </div>`;
+      }).join('');
+    }
+
+    function showAddEntity() {
+      document.getElementById('entityModal').classList.add('active');
+    }
+
+    function hideAddEntity() {
+      document.getElementById('entityModal').classList.remove('active');
+    }
+
+    async function addEntity() {
+      const name = document.getElementById('entName').value.trim();
+      if (!name) return alert('Entity name is required');
+
+      const entity = {
+        entityName: name,
+        entityType: document.getElementById('entType').value,
+        aliases: document.getElementById('entAliases').value.split(',').map(s => s.trim()).filter(Boolean),
+        county: document.getElementById('entCounty').value.trim(),
+        region: 'PA',
+        website: document.getElementById('entWebsite').value.trim(),
+        priorityTier: 3,
+        intermixITProspectOrClient: document.getElementById('entClient').checked,
+        watched: true,
+      };
+
+      try {
+        const res = await fetch('/api/pa-feed/entities', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(entity),
+        });
+        const data = await res.json();
+        if (data.success) {
+          hideAddEntity();
+          document.getElementById('entName').value = '';
+          document.getElementById('entAliases').value = '';
+          document.getElementById('entCounty').value = '';
+          document.getElementById('entWebsite').value = '';
+          await loadStatus();
+        }
+      } catch (err) {
+        alert('Error adding entity: ' + err.message);
+      }
+    }
+
+    function esc(str) {
+      if (!str) return '';
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    function formatDate(dateStr) {
+      if (!dateStr) return '';
+      try {
+        const d = new Date(dateStr);
+        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+      } catch {
+        return dateStr;
+      }
+    }
+
+    // Init
+    loadStatus();
+  </script>
+</body>
+</html>

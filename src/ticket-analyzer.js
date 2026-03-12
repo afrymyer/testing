@@ -1307,6 +1307,98 @@ function getDeepAnalytics(analyzedTickets, rawTickets = [], options = {}) {
     zeroHoursCompleted,
   };
 
+  // ── SLA Compliance Metrics ──
+  const completedWithSLA = analyzedTickets.filter(t =>
+    (t.status === 5 || t.status === 'Complete') && t.serviceLevelAgreementHasBeenMet != null
+  );
+  const slaMet = completedWithSLA.filter(t => t.serviceLevelAgreementHasBeenMet === true).length;
+  const slaMissed = completedWithSLA.filter(t => t.serviceLevelAgreementHasBeenMet === false).length;
+  const slaUnknown = analyzedTickets.filter(t =>
+    (t.status === 5 || t.status === 'Complete') && t.serviceLevelAgreementHasBeenMet == null
+  ).length;
+
+  // MTTR by category
+  const mttrByCategory = {};
+  for (const t of analyzedTickets) {
+    if ((t.status !== 5 && t.status !== 'Complete') || !t.createDate || !t.resolvedDateTime) continue;
+    const cat = t.categoryLabel || 'Unknown';
+    if (cat === 'Needs Review' || cat === 'Uncategorized') continue;
+    const resolutionMs = new Date(t.resolvedDateTime).getTime() - new Date(t.createDate).getTime();
+    if (resolutionMs < 0) continue;
+    if (!mttrByCategory[cat]) mttrByCategory[cat] = { totalMs: 0, count: 0 };
+    mttrByCategory[cat].totalMs += resolutionMs;
+    mttrByCategory[cat].count++;
+  }
+
+  const mttrByCategoryList = Object.entries(mttrByCategory)
+    .map(([category, data]) => ({
+      category,
+      count: data.count,
+      avgHours: Math.round((data.totalMs / data.count / 3600000) * 10) / 10,
+      avgMinutes: Math.round(data.totalMs / data.count / 60000),
+    }))
+    .sort((a, b) => a.avgHours - b.avgHours);
+
+  // MTTR by priority
+  const mttrByPriority = {};
+  for (const t of analyzedTickets) {
+    if ((t.status !== 5 && t.status !== 'Complete') || !t.createDate || !t.resolvedDateTime) continue;
+    const pLabel = priorityMap[t.priority] || `Priority ${t.priority || 'None'}`;
+    const resolutionMs = new Date(t.resolvedDateTime).getTime() - new Date(t.createDate).getTime();
+    if (resolutionMs < 0) continue;
+    if (!mttrByPriority[pLabel]) mttrByPriority[pLabel] = { totalMs: 0, count: 0 };
+    mttrByPriority[pLabel].totalMs += resolutionMs;
+    mttrByPriority[pLabel].count++;
+  }
+
+  const mttrByPriorityList = Object.entries(mttrByPriority)
+    .map(([priority, data]) => ({
+      priority,
+      count: data.count,
+      avgHours: Math.round((data.totalMs / data.count / 3600000) * 10) / 10,
+      avgMinutes: Math.round(data.totalMs / data.count / 60000),
+    }))
+    .sort((a, b) => a.avgHours - b.avgHours);
+
+  // First response time
+  const ticketsWithFRT = analyzedTickets.filter(t =>
+    (t.status === 5 || t.status === 'Complete') && t.createDate && t.firstResponseDateTime
+  );
+  const avgFirstResponseMs = ticketsWithFRT.length > 0
+    ? ticketsWithFRT.reduce((sum, t) => sum + (new Date(t.firstResponseDateTime).getTime() - new Date(t.createDate).getTime()), 0) / ticketsWithFRT.length
+    : null;
+
+  const slaMetrics = {
+    compliance: {
+      met: slaMet,
+      missed: slaMissed,
+      unknown: slaUnknown,
+      total: completedWithSLA.length,
+      rate: completedWithSLA.length > 0 ? Math.round((slaMet / completedWithSLA.length) * 100) : null,
+    },
+    mttrByCategory: mttrByCategoryList,
+    mttrByPriority: mttrByPriorityList,
+    firstResponseTime: {
+      avgHours: avgFirstResponseMs != null ? Math.round((avgFirstResponseMs / 3600000) * 10) / 10 : null,
+      avgMinutes: avgFirstResponseMs != null ? Math.round(avgFirstResponseMs / 60000) : null,
+      ticketCount: ticketsWithFRT.length,
+    },
+    overallMTTR: (() => {
+      const allCompleted = analyzedTickets.filter(t =>
+        (t.status === 5 || t.status === 'Complete') && t.createDate && t.resolvedDateTime
+      );
+      if (allCompleted.length === 0) return null;
+      const totalMs = allCompleted.reduce((sum, t) =>
+        sum + (new Date(t.resolvedDateTime).getTime() - new Date(t.createDate).getTime()), 0
+      );
+      return {
+        avgHours: Math.round((totalMs / allCompleted.length / 3600000) * 10) / 10,
+        avgMinutes: Math.round(totalMs / allCompleted.length / 60000),
+        ticketCount: allCompleted.length,
+      };
+    })(),
+  };
+
   return {
     priorityBreakdown,
     categoryDeepBreakdown,
@@ -1318,6 +1410,7 @@ function getDeepAnalytics(analyzedTickets, rawTickets = [], options = {}) {
     quickHitterValidation: qhValidation,
     doItNowAnalysis,
     overviewCharts,
+    slaMetrics,
   };
 }
 

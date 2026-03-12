@@ -343,6 +343,15 @@ async function fetchTickets() {
     renderAnalytics(data.analytics, data.summary);
     applyFilters();
 
+    // Show action buttons now that tickets are loaded
+    const btnExport = document.getElementById('btn-export-csv');
+    if (btnExport) btnExport.classList.remove('hidden');
+    const btnBulk = document.getElementById('btn-bulk-scripts');
+    if (btnBulk) btnBulk.classList.remove('hidden');
+
+    // Cross-reference PA Feed incidents with tickets
+    if (typeof runCrossReference === 'function') runCrossReference();
+
     statusBar.className = 'status-bar connected';
     const queueLabel = selectedQueues.length > 0 ? ` in ${selectedQueues.length} queue${selectedQueues.length > 1 ? 's' : ''}` : '';
     const timeLabel = from ? ` (${from} to ${to})` : '';
@@ -382,6 +391,12 @@ async function loadDemo() {
     renderSummary(data.summary);
     renderAnalytics(data.analytics, data.summary);
     applyFilters();
+
+    // Show action buttons for demo mode too
+    const btnExport = document.getElementById('btn-export-csv');
+    if (btnExport) btnExport.classList.remove('hidden');
+    const btnBulk = document.getElementById('btn-bulk-scripts');
+    if (btnBulk) btnBulk.classList.remove('hidden');
 
     statusBar.className = 'status-bar demo';
     const aiHint = aiEnabled ? ' Click "AI Analyze" for deeper insights.' : '';
@@ -566,6 +581,9 @@ function renderAnalytics(analytics, summary) {
 
   // Do It Now Analysis
   renderDoItNow(analytics.doItNowAnalysis);
+
+  // SLA Compliance Dashboard
+  if (typeof renderSLAMetrics === 'function') renderSLAMetrics(analytics);
 
   // AI Insights tab (show placeholder if not yet analyzed)
   if (!aiAnalyzed) renderAIInsights(null);
