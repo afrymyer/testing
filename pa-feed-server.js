@@ -18,7 +18,6 @@ app.use(express.static(path.join(__dirname, 'public')));
 const paFeed = new PAFeedOrchestrator({
   enableSocial: process.env.PA_FEED_ENABLE_SOCIAL === 'true',
   enableAlerts: !!process.env.TEAMS_WEBHOOK_URL,
-  enableSummarization: !!process.env.ANTHROPIC_API_KEY,
   teams: {
     webhookUrl: process.env.TEAMS_WEBHOOK_URL,
     minConfidenceForAlert: parseInt(process.env.PA_FEED_MIN_ALERT_CONFIDENCE || '50'),
@@ -99,7 +98,6 @@ app.post('/api/pa-feed/digest', async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`PA Cyber Watch Feed running on http://localhost:${PORT}`);
-  console.log(`AI Summaries: ${paFeed.summarizer.isConfigured() ? 'Enabled' : 'Disabled (set ANTHROPIC_API_KEY)'}`);
   console.log(`Teams Alerts: ${paFeed.teamsAlerter.isConfigured() ? 'Enabled' : 'Disabled (set TEAMS_WEBHOOK_URL)'}`);
   console.log(`Social Monitoring: ${paFeed.enableSocial ? 'Enabled' : 'Disabled'}`);
   console.log(`Auto-poll: ${process.env.PA_FEED_AUTO_START === 'true' ? 'Every 30 min' : 'Off (manual only)'}`);

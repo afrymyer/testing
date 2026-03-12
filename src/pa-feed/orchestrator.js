@@ -32,7 +32,6 @@ class PAFeedOrchestrator {
     // Config
     this.enableSocial = options.enableSocial || false;
     this.enableAlerts = options.enableAlerts !== false;
-    this.enableSummarization = options.enableSummarization !== false;
 
     // State
     this.lastRunAt = null;
@@ -137,24 +136,21 @@ class PAFeedOrchestrator {
       this.incidents = this.deduplicator.process(scoredItems);
       console.log(`[PAFeed] ${this.incidents.length} deduplicated incidents`);
 
-      // Step 6: AI Summarization (for medium+ confidence)
-      if (this.enableSummarization && this.summarizer.isConfigured()) {
-        const needsSummary = this.incidents.filter(i =>
-          i.confidenceScore >= 40 && !i.aiSummary
-        );
-        if (needsSummary.length > 0) {
-          const summarized = await this.summarizer.summarizeBatch(needsSummary);
-          // Merge summaries back
-          for (const item of summarized) {
-            const idx = this.incidents.findIndex(i =>
-              i.duplicateGroupId === item.duplicateGroupId
-            );
-            if (idx >= 0) {
-              this.incidents[idx].aiSummary = item.aiSummary;
-            }
+      // Step 6: Summarization (for medium+ confidence)
+      const needsSummary = this.incidents.filter(i =>
+        i.confidenceScore >= 40 && !i.aiSummary
+      );
+      if (needsSummary.length > 0) {
+        const summarized = await this.summarizer.summarizeBatch(needsSummary);
+        for (const item of summarized) {
+          const idx = this.incidents.findIndex(i =>
+            i.duplicateGroupId === item.duplicateGroupId
+          );
+          if (idx >= 0) {
+            this.incidents[idx].aiSummary = item.aiSummary;
           }
-          console.log(`[PAFeed] Summarized ${summarized.length} incidents`);
         }
+        console.log(`[PAFeed] Summarized ${summarized.length} incidents`);
       }
 
       // Step 7: Send alerts for new high/medium items
@@ -250,7 +246,6 @@ class PAFeedOrchestrator {
       config: {
         enableSocial: this.enableSocial,
         enableAlerts: this.enableAlerts,
-        enableSummarization: this.enableSummarization,
       },
     };
   }
