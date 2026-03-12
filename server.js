@@ -12,8 +12,6 @@ const { loadScript, listScripts } = require('./src/script-mapper');
 console.log('[Startup] script-mapper loaded');
 const { analyzeWithAI, mergeAIResults, generateBatchInsights, isConfigured: isAIConfigured } = require('./src/ai-analyzer');
 console.log('[Startup] ai-analyzer loaded');
-const { PAFeedOrchestrator } = require('./src/pa-feed/orchestrator');
-console.log('[Startup] pa-feed orchestrator loaded');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -501,132 +499,8 @@ app.post('/api/tickets/update-priority', async (req, res) => {
   res.json(results);
 });
 
-// ── PA Cyber Watch Feed ──
-
-let paFeed = null;
-
-function initPAFeed() {
-  paFeed = new PAFeedOrchestrator({
-    enableSocial: process.env.PA_FEED_ENABLE_SOCIAL === 'true',
-    enableAlerts: !!process.env.TEAMS_WEBHOOK_URL,
-    enableSummarization: !!process.env.ANTHROPIC_API_KEY,
-    teams: {
-      webhookUrl: process.env.TEAMS_WEBHOOK_URL,
-      minConfidenceForAlert: parseInt(process.env.PA_FEED_MIN_ALERT_CONFIDENCE || '50'),
-    },
-  });
-
-  if (process.env.PA_FEED_AUTO_START === 'true') {
-    paFeed.start();
-  }
-
-  return paFeed;
-}
-
-/**
- * GET /api/pa-feed/status - Feed status and stats
- */
-app.get('/api/pa-feed/status', (req, res) => {
-  if (!paFeed) initPAFeed();
-  res.json(paFeed.getState());
-});
-
-/**
- * POST /api/pa-feed/run - Trigger a manual feed cycle
- */
-app.post('/api/pa-feed/run', async (req, res) => {
-  if (!paFeed) initPAFeed();
-  try {
-    const result = await paFeed.runCycle();
-    res.json(result);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-/**
- * GET /api/pa-feed/incidents - Get all incidents with optional filters
- * Query params: county, entityType, confidenceBand, incidentType, minConfidence, watchedOnly, clientOnly, since
- */
-app.get('/api/pa-feed/incidents', (req, res) => {
-  if (!paFeed) initPAFeed();
-  const filters = {};
-  if (req.query.county) filters.county = req.query.county;
-  if (req.query.entityType) filters.entityType = req.query.entityType;
-  if (req.query.confidenceBand) filters.confidenceBand = req.query.confidenceBand;
-  if (req.query.incidentType) filters.incidentType = req.query.incidentType;
-  if (req.query.minConfidence) filters.minConfidence = parseInt(req.query.minConfidence);
-  if (req.query.watchedOnly === 'true') filters.watchedOnly = true;
-  if (req.query.clientOnly === 'true') filters.clientOnly = true;
-  if (req.query.since) filters.since = req.query.since;
-
-  const incidents = paFeed.getFilteredIncidents(filters);
-  res.json({ incidents, total: incidents.length, filters });
-});
-
-/**
- * GET /api/pa-feed/entities - Get entity list
- * Query params: county, entityType, watchedOnly
- */
-app.get('/api/pa-feed/entities', (req, res) => {
-  if (!paFeed) initPAFeed();
-  let entities = paFeed.entityManager.entities;
-  if (req.query.county) entities = entities.filter(e => e.county === req.query.county);
-  if (req.query.entityType) entities = entities.filter(e => e.entityType === req.query.entityType);
-  if (req.query.watchedOnly === 'true') entities = entities.filter(e => e.watched);
-  res.json({ entities, total: entities.length });
-});
-
-/**
- * POST /api/pa-feed/entities - Add a new entity
- */
-app.post('/api/pa-feed/entities', (req, res) => {
-  if (!paFeed) initPAFeed();
-  const entity = req.body;
-  if (!entity.entityName) {
-    return res.status(400).json({ error: 'entityName is required' });
-  }
-  paFeed.entityManager.addEntity(entity);
-  res.json({ success: true, entity });
-});
-
-/**
- * POST /api/pa-feed/start - Start scheduled polling
- */
-app.post('/api/pa-feed/start', (req, res) => {
-  if (!paFeed) initPAFeed();
-  paFeed.start();
-  res.json({ started: true });
-});
-
-/**
- * POST /api/pa-feed/stop - Stop scheduled polling
- */
-app.post('/api/pa-feed/stop', (req, res) => {
-  if (!paFeed) initPAFeed();
-  paFeed.stop();
-  res.json({ stopped: true });
-});
-
-/**
- * POST /api/pa-feed/digest - Send daily digest to Teams
- */
-app.post('/api/pa-feed/digest', async (req, res) => {
-  if (!paFeed) initPAFeed();
-  const incidents = paFeed.incidents;
-  const card = paFeed.teamsAlerter.buildDigestCard(incidents, req.body.dateRange);
-  const result = await paFeed.teamsAlerter.postToTeams(card);
-  res.json({ ...result, incidentCount: incidents.length });
-});
-
-// Serve PA Feed dashboard
-app.get('/pa-feed', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'pa-feed.html'));
-});
-
 app.listen(PORT, () => {
   console.log(`IntermixIT Ticket Analyzer running on http://localhost:${PORT}`);
-  console.log(`PA Cyber Watch Feed available at http://localhost:${PORT}/pa-feed`);
   console.log(`Fabric SQL: ${fabricClient ? 'Configured' : 'Not configured (demo mode)'}`);
   console.log(`AI Analysis: ${isAIConfigured() ? 'Configured (Claude)' : 'Not configured — set ANTHROPIC_API_KEY for AI features'}`);
 });
