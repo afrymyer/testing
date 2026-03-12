@@ -15,6 +15,11 @@ const { GdeltSource } = require('./sources/gdelt-source');
 const { CisaSource } = require('./sources/cisa-source');
 const { SocialSource } = require('./sources/social-source');
 const { PAAttorneyGeneralSource } = require('./sources/pa-ag-source');
+const { CyberNewsSource } = require('./sources/cybernews-source');
+const { RansomwareLiveSource } = require('./sources/ransomware-live-source');
+const { HIBPSource } = require('./sources/hibp-source');
+const { OTXSource } = require('./sources/otx-source');
+const { ShadowserverSource } = require('./sources/shadowserver-source');
 const { FeedStorage } = require('./storage');
 
 class PAFeedOrchestrator {
@@ -35,6 +40,11 @@ class PAFeedOrchestrator {
     this.cisaSrc = new CisaSource(options.cisa);
     this.socialSrc = new SocialSource(options.social);
     this.paAgSrc = new PAAttorneyGeneralSource(options.paAg);
+    this.cyberNewsSrc = new CyberNewsSource(options.cyberNews);
+    this.ransomwareLiveSrc = new RansomwareLiveSource(options.ransomwareLive);
+    this.hibpSrc = new HIBPSource(options.hibp);
+    this.otxSrc = new OTXSource(options.otx);
+    this.shadowserverSrc = new ShadowserverSource(options.shadowserver);
 
     // Config
     this.enableSocial = options.enableSocial || false;
@@ -65,18 +75,29 @@ class PAFeedOrchestrator {
       const broadQueries = buildBroadSearchQueries();
 
       // Step 2: Ingest from all sources in parallel
-      const [newsItems, gdeltItems, cisaItems, paAgItems, socialItems] = await Promise.all([
+      const [
+        newsItems, gdeltItems, cisaItems, paAgItems, socialItems,
+        cyberNewsItems, ransomwareItems, hibpItems, otxItems, shadowserverItems,
+      ] = await Promise.all([
         this.newsSrc.fetchAll([...entityQueries.slice(0, 10), ...broadQueries]),
         this.gdeltSrc.fetchAll(this.gdeltSrc.getDefaultQueries()),
         this.cisaSrc.fetchAll(),
         this.paAgSrc.fetchAll(),
         this.enableSocial ? this.socialSrc.fetchAll() : Promise.resolve([]),
+        this.cyberNewsSrc.fetchAll(),
+        this.ransomwareLiveSrc.fetchAll(),
+        this.hibpSrc.fetchAll(),
+        this.otxSrc.fetchAll(),
+        this.shadowserverSrc.fetchAll(),
       ]);
 
-      console.log(`[PAFeed] Ingested: news=${newsItems.length}, gdelt=${gdeltItems.length}, cisa=${cisaItems.length}, paAg=${paAgItems.length}, social=${socialItems.length}`);
+      console.log(`[PAFeed] Ingested: news=${newsItems.length}, gdelt=${gdeltItems.length}, cisa=${cisaItems.length}, paAg=${paAgItems.length}, social=${socialItems.length}, cyberNews=${cyberNewsItems.length}, ransomware=${ransomwareItems.length}, hibp=${hibpItems.length}, otx=${otxItems.length}, shadowserver=${shadowserverItems.length}`);
 
       // Step 3: Combine and filter
-      const allRawItems = [...newsItems, ...gdeltItems, ...cisaItems, ...paAgItems, ...socialItems];
+      const allRawItems = [
+        ...newsItems, ...gdeltItems, ...cisaItems, ...paAgItems, ...socialItems,
+        ...cyberNewsItems, ...ransomwareItems, ...hibpItems, ...otxItems, ...shadowserverItems,
+      ];
       this.rawItems = allRawItems;
 
       // Step 4: Process each item through the pipeline
@@ -85,7 +106,7 @@ class PAFeedOrchestrator {
         const text = `${item.headline} ${item.description || ''}`;
 
         // Check for incident keywords (skip items with no relevant keywords, except official sources)
-        const isOfficialSource = item.rawSource === 'CISA_Alerts' || item.rawSource === 'CISA_KEV' || item.rawSource === 'PA_AG';
+        const isOfficialSource = item.rawSource === 'CISA_Alerts' || item.rawSource === 'CISA_KEV' || item.rawSource === 'PA_AG' || item.rawSource === 'RansomwareLive' || item.rawSource === 'HIBP' || item.rawSource === 'OTX' || item.rawSource === 'Shadowserver';
         if (!isOfficialSource) {
           if (!hasIncidentKeywords(text)) continue;
         }
@@ -256,6 +277,11 @@ class PAFeedOrchestrator {
         cisa: { lastPoll: this.cisaSrc.lastPollAt },
         paAg: { lastPoll: this.paAgSrc.lastPollAt },
         social: { lastPoll: this.socialSrc.lastPollAt, enabled: this.enableSocial },
+        cyberNews: { lastPoll: this.cyberNewsSrc.lastPollAt },
+        ransomwareLive: { lastPoll: this.ransomwareLiveSrc.lastPollAt },
+        hibp: { lastPoll: this.hibpSrc.lastPollAt },
+        otx: { lastPoll: this.otxSrc.lastPollAt },
+        shadowserver: { lastPoll: this.shadowserverSrc.lastPollAt },
       },
       config: {
         enableSocial: this.enableSocial,

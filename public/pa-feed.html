@@ -315,9 +315,80 @@
       margin-top: 16px;
     }
 
+    /* Pipeline diagram */
+    .pipeline {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px 24px;
+      margin-bottom: 24px;
+      overflow-x: auto;
+    }
+    .pipeline-title {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      margin-bottom: 14px;
+    }
+    .pipeline-flow {
+      display: flex;
+      align-items: stretch;
+      gap: 0;
+      min-width: min-content;
+    }
+    .pipeline-stage {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      flex: 1;
+      min-width: 130px;
+      position: relative;
+    }
+    .pipeline-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2rem;
+      margin-bottom: 8px;
+      position: relative;
+      z-index: 2;
+    }
+    .pipeline-stage:nth-child(1) .pipeline-icon { background: rgba(59,130,246,0.2); color: #60a5fa; }
+    .pipeline-stage:nth-child(2) .pipeline-icon { background: rgba(168,85,247,0.2); color: #c084fc; }
+    .pipeline-stage:nth-child(3) .pipeline-icon { background: rgba(245,158,11,0.2); color: #fbbf24; }
+    .pipeline-stage:nth-child(4) .pipeline-icon { background: rgba(34,197,94,0.2); color: #4ade80; }
+    .pipeline-stage:nth-child(5) .pipeline-icon { background: rgba(239,68,68,0.2); color: #f87171; }
+    .pipeline-stage-label {
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--text);
+      text-align: center;
+      margin-bottom: 4px;
+    }
+    .pipeline-subs {
+      font-size: 0.68rem;
+      color: var(--text-muted);
+      text-align: center;
+      line-height: 1.5;
+    }
+    .pipeline-arrow {
+      display: flex;
+      align-items: center;
+      padding: 0 2px;
+      margin-top: -18px;
+    }
+    .pipeline-arrow svg { color: var(--border); }
+
     @media (max-width: 768px) {
       .stats-row { grid-template-columns: repeat(2, 1fr); }
       .header { flex-direction: column; align-items: flex-start; }
+      .pipeline-flow { flex-wrap: wrap; justify-content: center; gap: 8px; }
+      .pipeline-arrow { display: none; }
+      .pipeline-stage { min-width: 110px; }
     }
   </style>
 </head>
@@ -363,6 +434,41 @@
       <div class="stat-card" data-filter="sources">
         <div class="stat-value" id="statSources">-</div>
         <div class="stat-label">Raw Items Scanned</div>
+      </div>
+    </div>
+
+    <div class="pipeline">
+      <div class="pipeline-title">Detection Pipeline</div>
+      <div class="pipeline-flow">
+        <div class="pipeline-stage">
+          <div class="pipeline-icon">&#x1f4e1;</div>
+          <div class="pipeline-stage-label">Sources</div>
+          <div class="pipeline-subs">Google News RSS<br>GDELT Project<br>CISA Alerts &amp; KEV<br>PA Attorney General<br>BleepingComputer<br>SecurityWeek<br>DataBreaches.net<br>Ransomware.live<br>Have I Been Pwned<br>OTX / Shadowserver</div>
+        </div>
+        <div class="pipeline-arrow"><svg width="28" height="20" viewBox="0 0 28 20"><path d="M2 10h18m0 0l-6-5m6 5l-6 5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <div class="pipeline-stage">
+          <div class="pipeline-icon">&#x1f3af;</div>
+          <div class="pipeline-stage-label">Entity Matching</div>
+          <div class="pipeline-subs">PA organizations<br>Alias resolution<br>Fuzzy matching<br>Geography detection</div>
+        </div>
+        <div class="pipeline-arrow"><svg width="28" height="20" viewBox="0 0 28 20"><path d="M2 10h18m0 0l-6-5m6 5l-6 5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <div class="pipeline-stage">
+          <div class="pipeline-icon">&#x1f50d;</div>
+          <div class="pipeline-stage-label">Keyword Scoring</div>
+          <div class="pipeline-subs">Incident language<br>Threat classification<br>Cross-source validation</div>
+        </div>
+        <div class="pipeline-arrow"><svg width="28" height="20" viewBox="0 0 28 20"><path d="M2 10h18m0 0l-6-5m6 5l-6 5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <div class="pipeline-stage">
+          <div class="pipeline-icon">&#x1f4dd;</div>
+          <div class="pipeline-stage-label">AI Summarization</div>
+          <div class="pipeline-subs">Deduplication<br>Incident grouping<br>Analyst summaries</div>
+        </div>
+        <div class="pipeline-arrow"><svg width="28" height="20" viewBox="0 0 28 20"><path d="M2 10h18m0 0l-6-5m6 5l-6 5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <div class="pipeline-stage">
+          <div class="pipeline-icon">&#x1f6a8;</div>
+          <div class="pipeline-stage-label">Confidence Scoring</div>
+          <div class="pipeline-subs">0–100 scoring<br>Confidence bands<br>Alert routing</div>
+        </div>
       </div>
     </div>
 
@@ -551,7 +657,7 @@
       statusText.textContent = 'Scanning...';
 
       const list = document.getElementById('incidentList');
-      list.innerHTML = '<div class="loading"><div class="spinner"></div><p>Running feed cycle... scanning news, GDELT, CISA, and social sources.</p></div>';
+      list.innerHTML = '<div class="loading"><div class="spinner"></div><p>Running feed cycle... scanning all 10 sources (news, GDELT, CISA, PA AG, cyber blogs, ransomware leaks, HIBP, OTX, Shadowserver).</p></div>';
 
       try {
         const res = await fetch('/api/pa-feed/run', { method: 'POST' });
