@@ -1,20 +1,21 @@
-console.log('[Startup] server.js loading...');
 require('dotenv').config();
-console.log('[Startup] dotenv loaded');
 const express = require('express');
-console.log('[Startup] express loaded');
 const path = require('path');
+const logger = require('./src/logger');
+const { validateConfig, getConfig } = require('./src/config');
+const { validate, ticketQuerySchema, analyzeBodySchema, aiAnalyzeBodySchema, updatePrioritySchema, scriptParamsSchema, bulkScriptSchema } = require('./src/validation');
 const FabricClient = require('./src/fabric-client');
-console.log('[Startup] fabric-client loaded');
 const { analyzeTickets, getSummary, getDeepAnalytics, CATEGORY_PATTERNS } = require('./src/ticket-analyzer');
-console.log('[Startup] ticket-analyzer loaded');
 const { loadScript, listScripts } = require('./src/script-mapper');
-console.log('[Startup] script-mapper loaded');
 const { analyzeWithAI, mergeAIResults, generateBatchInsights, isConfigured: isAIConfigured } = require('./src/ai-analyzer');
-console.log('[Startup] ai-analyzer loaded');
+const aiCache = require('./src/ai-cache');
+
+// Validate config at startup
+validateConfig();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const startTime = Date.now();
 
 app.use(express.json({ limit: '5mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -43,10 +44,10 @@ async function getPriorityMap() {
     for (const p of priorities) {
       cachedPriorityMap[p.value] = p.label;
     }
-    console.log(`[Fabric] Priority map loaded:`, cachedPriorityMap);
+    logger.info({ component: 'fabric', map: cachedPriorityMap }, 'Priority map loaded');
     return cachedPriorityMap;
   } catch (err) {
-    console.warn(`[Fabric] Failed to fetch priority picklist: ${err.message}`);
+    logger.warn({ component: 'fabric', error: err.message }, 'Failed to fetch priority picklist');
     return null;
   }
 }
@@ -68,10 +69,10 @@ async function getIssueTypeMaps() {
     for (const sit of subIssueTypes) {
       cachedSubIssueTypeMap[sit.value] = sit.label;
     }
-    console.log(`[Fabric] Issue type map loaded: ${Object.keys(cachedIssueTypeMap).length} types, ${Object.keys(cachedSubIssueTypeMap).length} sub-types`);
+    logger.info({ component: 'fabric', types: Object.keys(cachedIssueTypeMap).length, subTypes: Object.keys(cachedSubIssueTypeMap).length }, 'Issue type map loaded');
     return { issueTypeMap: cachedIssueTypeMap, subIssueTypeMap: cachedSubIssueTypeMap };
   } catch (err) {
-    console.warn(`[Fabric] Failed to fetch issue type picklists: ${err.message}`);
+    logger.warn({ component: 'fabric', error: err.message }, 'Failed to fetch issue type picklists');
     return { issueTypeMap: null, subIssueTypeMap: null };
   }
 }
@@ -96,7 +97,7 @@ app.get('/api/status', (req, res) => {
  * GET /api/tickets - Fetch and analyze open tickets from Autotask
  * Query params: queueId, maxRecords, dateFrom, dateTo, includeCompleted
  */
-app.get('/api/tickets', async (req, res) => {
+app.get('/api/tickets', validate(ticketQuerySchema, 'query'), async (req, res) => {
   try {
     if (!fabricClient) {
       return res.status(503).json({
@@ -142,7 +143,7 @@ app.get('/api/tickets', async (req, res) => {
       }
     }
 
-    console.log(`[API] Fetched ${tickets.length} tickets (includeCompleted=${includeCompleted}, queues=${queueIdList.join(',') || 'all'})`);
+    logger.info({ component: 'api', count: tickets.length, includeCompleted, queues: queueIdList.join(',') || 'all' }, 'Fetched tickets');
 
     // Enrich tickets with worked hours from time entries
     let hoursMap = {};
@@ -152,9 +153,9 @@ app.get('/api/tickets', async (req, res) => {
         const ticketIds = tickets.map(t => t.id).filter(Boolean);
         hoursMap = await fabricClient.getTimeEntriesForTickets(ticketIds);
         const ticketsWithHours = Object.keys(hoursMap).length;
-        console.log(`[API] Time entries: ${ticketsWithHours}/${ticketIds.length} tickets have worked hours`);
+        logger.info({ component: 'api', ticketsWithHours, total: ticketIds.length }, 'Time entries loaded');
       } catch (err) {
-        console.warn(`[API] Time entry enrichment failed: ${err.message}`);
+        logger.warn({ component: 'api', error: err.message }, 'Time entry enrichment failed');
       }
     }
 
@@ -165,10 +166,10 @@ app.get('/api/tickets', async (req, res) => {
         const companyIds = [...new Set(tickets.map(t => t.companyID).filter(Boolean))];
         if (companyIds.length > 0) {
           companyNameMap = await fabricClient.getCompanyNames(companyIds);
-          console.log(`[API] Company names resolved: ${Object.keys(companyNameMap).length}/${companyIds.length}`);
+          logger.info({ component: 'api', resolved: Object.keys(companyNameMap).length, total: companyIds.length }, 'Company names resolved');
         }
       } catch (err) {
-        console.warn(`[API] Company name resolution failed: ${err.message}`);
+        logger.warn({ component: 'api', error: err.message }, 'Company name resolution failed');
       }
     }
 
@@ -204,9 +205,9 @@ app.get('/api/tickets', async (req, res) => {
             }
           }
         }
-        console.log(`[API] PIA detection: ${piaTicketIds.size}/${ticketIds.length} tickets have PIA notes (identifiers: ${piaIdentifiers.join(', ')})`);
+        logger.info({ component: 'api', piaCount: piaTicketIds.size, total: ticketIds.length, identifiers: piaIdentifiers }, 'PIA detection complete');
       } catch (err) {
-        console.warn(`[API] Note enrichment for PIA detection failed: ${err.message}`);
+        logger.warn({ component: 'api', error: err.message }, 'Note enrichment for PIA detection failed');
       }
     }
 
@@ -228,7 +229,7 @@ app.get('/api/tickets', async (req, res) => {
       : enrichedTickets;
 
     if (excludeZeroHours) {
-      console.log(`[API] After excludeZeroHours filter: ${filteredTickets.length}/${enrichedTickets.length} tickets`);
+      logger.info({ component: 'api', filtered: filteredTickets.length, total: enrichedTickets.length }, 'After excludeZeroHours filter');
     }
 
     // Build queue distribution for diagnostics
@@ -239,7 +240,7 @@ app.get('/api/tickets', async (req, res) => {
       queueDist[qid].total++;
       if ((hoursMap[t.id] || 0) > 0) queueDist[qid].withHours++;
     }
-    console.log(`[API] Queue distribution:`, JSON.stringify(queueDist));
+    logger.info({ component: 'api', queueDist }, 'Queue distribution');
 
     const priorityMap = await getPriorityMap();
     const analyzed = analyzeTickets(filteredTickets);
@@ -257,7 +258,7 @@ app.get('/api/tickets', async (req, res) => {
 
     res.json({ tickets: analyzed, summary, analytics, queueDiagnostics: queueDist, priorityMap, issueTypeMap, subIssueTypeMap });
   } catch (err) {
-    console.error('Failed to fetch tickets:', err.message);
+    logger.error({ component: 'api', error: err.message }, 'Failed to fetch tickets');
     res.status(500).json({ error: err.message });
   }
 });
@@ -266,7 +267,7 @@ app.get('/api/tickets', async (req, res) => {
  * POST /api/analyze - Analyze tickets provided in the request body
  * (for demo/testing without Autotask credentials)
  */
-app.post('/api/analyze', (req, res) => {
+app.post('/api/analyze', validate(analyzeBodySchema, 'body'), (req, res) => {
   const { tickets } = req.body;
   if (!Array.isArray(tickets)) {
     return res.status(400).json({ error: 'tickets must be an array' });
@@ -290,7 +291,7 @@ app.get('/api/scripts', (req, res) => {
 /**
  * GET /api/scripts/:type/:filename - Get a specific script's content
  */
-app.get('/api/scripts/:type/:filename', (req, res) => {
+app.get('/api/scripts/:type/:filename', validate(scriptParamsSchema, 'params'), (req, res) => {
   const { type, filename } = req.params;
   if (!['datto', 'pia'].includes(type)) {
     return res.status(400).json({ error: 'Type must be datto or pia' });
@@ -352,7 +353,7 @@ app.get('/api/resources', async (req, res) => {
  * Expects { tickets: [...] } where tickets are the raw ticket objects
  * Returns AI-enhanced analyzed tickets
  */
-app.post('/api/ai-analyze', async (req, res) => {
+app.post('/api/ai-analyze', validate(aiAnalyzeBodySchema, 'body'), async (req, res) => {
   try {
     if (!isAIConfigured()) {
       return res.status(503).json({
@@ -376,7 +377,7 @@ app.post('/api/ai-analyze', async (req, res) => {
       res.write(`data: ${JSON.stringify(data)}\n\n`);
     }
 
-    console.log(`[AI] Starting AI analysis of ${tickets.length} tickets...`);
+    logger.info({ component: 'ai', count: tickets.length }, 'Starting AI analysis');
     const startTime = Date.now();
 
     sendProgress({ type: 'progress', phase: 'keyword', message: 'Running keyword analysis...' });
@@ -413,7 +414,7 @@ app.post('/api/ai-analyze', async (req, res) => {
     let batchInsights = null;
     try {
       sendProgress({ type: 'progress', phase: 'insights', message: 'Generating strategic insights...' });
-      console.log(`[AI] Generating batch-level insights...`);
+      logger.info({ component: 'ai' }, 'Generating batch-level insights');
       const insightsTimeout = new Promise((_, reject) =>
         setTimeout(() => reject(new Error('Batch insights overall timeout (5 min)')), 300000)
       );
@@ -428,13 +429,13 @@ app.post('/api/ai-analyze', async (req, res) => {
         insightsTimeout,
       ]);
     } catch (batchErr) {
-      console.warn(`[AI] Batch insights failed (non-fatal): ${batchErr.message}`);
+      logger.warn({ component: 'ai', error: batchErr.message }, 'Batch insights failed (non-fatal)');
     }
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     const aiEnhanced = merged.filter((t) => t.aiInsights).length;
     const categoryChanges = merged.filter((t) => t.aiInsights && t.aiInsights.categoryChanged).length;
-    console.log(`[AI] Analysis complete in ${elapsed}s. ${aiEnhanced} tickets enhanced, ${categoryChanges} categories changed.`);
+    logger.info({ component: 'ai', elapsed, aiEnhanced, categoryChanges }, 'AI analysis complete');
 
     // Send the final result as a 'done' event
     sendProgress({
@@ -454,7 +455,7 @@ app.post('/api/ai-analyze', async (req, res) => {
     });
     res.end();
   } catch (err) {
-    console.error('[AI] Analysis failed:', err.message);
+    logger.error({ component: 'ai', error: err.message }, 'AI analysis failed');
     // If headers already sent (SSE mode), send error as event
     if (res.headersSent) {
       res.write(`data: ${JSON.stringify({ type: 'error', error: `AI analysis failed: ${err.message}` })}\n\n`);
@@ -470,7 +471,7 @@ app.post('/api/ai-analyze', async (req, res) => {
  * Expects { ticketIds: [number], priority: number }
  * Used to set validated quick hitters to "do it now" priority.
  */
-app.post('/api/tickets/update-priority', async (req, res) => {
+app.post('/api/tickets/update-priority', validate(updatePrioritySchema, 'body'), async (req, res) => {
   if (!fabricClient) {
     return res.status(503).json({ error: 'Fabric SQL not configured. Cannot update tickets in demo mode.' });
   }
@@ -490,17 +491,65 @@ app.post('/api/tickets/update-priority', async (req, res) => {
       await fabricClient.updateTicket(ticketId, { priority });
       results.updated.push(ticketId);
     } catch (err) {
-      console.warn(`[API] Failed to update ticket ${ticketId} priority: ${err.message}`);
+      logger.warn({ component: 'api', ticketId, error: err.message }, 'Failed to update ticket priority');
       results.failed.push({ ticketId, error: err.message });
     }
   }
 
-  console.log(`[API] Priority update: ${results.updated.length} updated, ${results.failed.length} failed (priority=${priority})`);
+  logger.info({ component: 'api', updated: results.updated.length, failed: results.failed.length, priority }, 'Priority update complete');
   res.json(results);
 });
 
+// Health check
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'healthy',
+    uptime: Math.round((Date.now() - startTime) / 1000),
+    memory: process.memoryUsage(),
+    fabricConfigured: !!fabricClient,
+    aiConfigured: isAIConfigured(),
+    aiCache: aiCache.getStats(),
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// AI Cache management
+app.get('/api/ai-cache/stats', (req, res) => {
+  res.json(aiCache.getStats());
+});
+
+app.post('/api/ai-cache/clear', (req, res) => {
+  aiCache.clear();
+  res.json({ cleared: true });
+});
+
+// Bulk script fetch
+app.post('/api/scripts/bulk', validate(bulkScriptSchema, 'body'), (req, res) => {
+  const { scripts } = req.body;
+  const results = scripts.map(s => {
+    const content = loadScript(s.type, s.filename);
+    return { type: s.type, filename: s.filename, content: content || null, found: !!content };
+  });
+  res.json(results);
+});
+
+// PA Feed cross-reference with tickets
+app.get('/api/cross-reference', (req, res) => {
+  // This endpoint returns potential links between PA feed incidents and current tickets
+  // In a full implementation, this would query both data sources
+  // For now, it provides the cross-reference structure that the frontend can populate
+  res.json({
+    enabled: true,
+    message: 'Cross-reference endpoint active. Load tickets and PA feed incidents to see correlations.',
+    endpoints: {
+      tickets: '/api/tickets',
+      paFeed: `http://localhost:${process.env.PA_FEED_PORT || 3001}/api/incidents`,
+    },
+  });
+});
+
 app.listen(PORT, () => {
-  console.log(`IntermixIT Ticket Analyzer running on http://localhost:${PORT}`);
-  console.log(`Fabric SQL: ${fabricClient ? 'Configured' : 'Not configured (demo mode)'}`);
-  console.log(`AI Analysis: ${isAIConfigured() ? 'Configured (Claude)' : 'Not configured — set ANTHROPIC_API_KEY for AI features'}`);
+  logger.info({ component: 'server', port: PORT }, 'IntermixIT Ticket Analyzer running');
+  logger.info({ component: 'server', configured: !!fabricClient }, 'Fabric SQL status');
+  logger.info({ component: 'server', configured: isAIConfigured() }, 'AI Analysis status');
 });
