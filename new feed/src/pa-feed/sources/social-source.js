@@ -7,7 +7,7 @@
  * Treat social sources as signals only, not confirmation.
  */
 
-const fetch = require('node-fetch');
+const { fetchWithRetry } = require('../retry');
 
 class SocialSource {
   constructor(options = {}) {
@@ -26,7 +26,7 @@ class SocialSource {
     for (const query of queries) {
       try {
         const url = `https://www.reddit.com/search.json?q=${encodeURIComponent(query)}&sort=new&limit=25&t=week`;
-        const response = await fetch(url, {
+        const response = await fetchWithRetry(url, {
           headers: {
             'User-Agent': 'PA-CyberWatch-Feed/1.0',
           },

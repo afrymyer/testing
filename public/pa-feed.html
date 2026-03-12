@@ -89,7 +89,11 @@
       border-radius: var(--radius);
       padding: 16px;
       text-align: center;
+      cursor: pointer;
+      transition: all 0.15s;
     }
+    .stat-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+    .stat-card.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
     .stat-card .stat-value {
       font-size: 2rem;
       font-weight: 700;
@@ -103,8 +107,11 @@
       letter-spacing: 0.05em;
     }
     .stat-card.high .stat-value { color: var(--high); }
+    .stat-card.high.active { border-color: var(--high); box-shadow: 0 0 0 1px var(--high); }
     .stat-card.medium .stat-value { color: var(--medium); }
+    .stat-card.medium.active { border-color: var(--medium); box-shadow: 0 0 0 1px var(--medium); }
     .stat-card.low .stat-value { color: var(--low); }
+    .stat-card.low.active { border-color: var(--low); box-shadow: 0 0 0 1px var(--low); }
 
     /* Filters */
     .filters {
@@ -333,27 +340,27 @@
 
   <div class="main">
     <div class="stats-row" id="statsRow">
-      <div class="stat-card">
+      <div class="stat-card" onclick="filterByStat('')" data-filter="">
         <div class="stat-value" id="statTotal">-</div>
         <div class="stat-label">Total Incidents</div>
       </div>
-      <div class="stat-card high">
+      <div class="stat-card high" onclick="filterByStat('High')" data-filter="High">
         <div class="stat-value" id="statHigh">-</div>
         <div class="stat-label">High Confidence</div>
       </div>
-      <div class="stat-card medium">
+      <div class="stat-card medium" onclick="filterByStat('Medium')" data-filter="Medium">
         <div class="stat-value" id="statMedium">-</div>
         <div class="stat-label">Medium</div>
       </div>
-      <div class="stat-card low">
+      <div class="stat-card low" onclick="filterByStat('Low')" data-filter="Low">
         <div class="stat-value" id="statLow">-</div>
         <div class="stat-label">Low / Chatter</div>
       </div>
-      <div class="stat-card">
+      <div class="stat-card" onclick="filterByStat('watched')" data-filter="watched">
         <div class="stat-value" id="statEntities">-</div>
         <div class="stat-label">Watched Entities</div>
       </div>
-      <div class="stat-card">
+      <div class="stat-card" data-filter="sources">
         <div class="stat-value" id="statSources">-</div>
         <div class="stat-label">Raw Items Scanned</div>
       </div>
@@ -473,6 +480,38 @@
   <script>
     let allIncidents = [];
     let feedState = null;
+    let activeStatFilter = null;
+
+    function filterByStat(filter) {
+      // Toggle off if already active
+      if (activeStatFilter === filter) {
+        activeStatFilter = null;
+      } else {
+        activeStatFilter = filter;
+      }
+
+      // Update active state on cards
+      document.querySelectorAll('.stat-card').forEach(card => {
+        card.classList.toggle('active', card.dataset.filter === activeStatFilter);
+      });
+
+      // Set the dropdown to match and reload
+      if (filter === 'High' || filter === 'Medium' || filter === 'Low') {
+        document.getElementById('filterBand').value = activeStatFilter || '';
+        loadIncidents();
+      } else if (filter === 'watched') {
+        document.getElementById('filterWatched').checked = !!activeStatFilter;
+        loadIncidents();
+      } else {
+        // "Total" = clear all filters
+        document.getElementById('filterBand').value = '';
+        document.getElementById('filterCounty').value = '';
+        document.getElementById('filterType').value = '';
+        document.getElementById('filterIncident').value = '';
+        document.getElementById('filterWatched').checked = false;
+        loadIncidents();
+      }
+    }
 
     async function loadStatus() {
       try {

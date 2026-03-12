@@ -5,7 +5,7 @@
  * context about threats relevant to PA municipalities and SMBs.
  */
 
-const fetch = require('node-fetch');
+const { fetchWithRetry } = require('../retry');
 
 const CISA_ALERTS_RSS = 'https://www.cisa.gov/cybersecurity-advisories/all.xml';
 const CISA_KEV_JSON = 'https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json';
@@ -22,7 +22,7 @@ class CisaSource {
    */
   async fetchAlerts() {
     try {
-      const response = await fetch(CISA_ALERTS_RSS, {
+      const response = await fetchWithRetry(CISA_ALERTS_RSS, {
         headers: { 'User-Agent': 'PA-CyberWatch-Feed/1.0' },
         timeout: 20000,
       });
@@ -76,7 +76,7 @@ class CisaSource {
    */
   async fetchKEV() {
     try {
-      const response = await fetch(CISA_KEV_JSON, {
+      const response = await fetchWithRetry(CISA_KEV_JSON, {
         headers: { 'User-Agent': 'PA-CyberWatch-Feed/1.0' },
         timeout: 20000,
       });

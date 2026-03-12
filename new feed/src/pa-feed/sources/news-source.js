@@ -4,7 +4,7 @@
  * Tier 1 source - high confidence.
  */
 
-const fetch = require('node-fetch');
+const { fetchWithRetry } = require('../retry');
 
 const GOOGLE_NEWS_RSS_BASE = 'https://news.google.com/rss/search';
 
@@ -81,7 +81,7 @@ class NewsSource {
   async fetchQuery(query) {
     const url = this._buildRssUrl(query);
     try {
-      const response = await fetch(url, {
+      const response = await fetchWithRetry(url, {
         headers: {
           'User-Agent': 'PA-CyberWatch-Feed/1.0',
         },

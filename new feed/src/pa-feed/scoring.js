@@ -24,6 +24,7 @@ const SOURCE_CREDIBILITY = {
 const ENTITY_MATCH = {
   exact: 25,       // Exact entity name match
   alias: 15,       // Alias match
+  fuzzy: 10,       // Fuzzy token match
   geography: 5,    // Generic PA geography match only
 };
 

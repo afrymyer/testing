@@ -4,7 +4,7 @@
  * Tier 2 source - broad discovery, refreshes every 15 minutes.
  */
 
-const fetch = require('node-fetch');
+const { fetchWithRetry } = require('../retry');
 
 const GDELT_DOC_API = 'https://api.gdeltproject.org/api/v2/doc/doc';
 
@@ -92,7 +92,7 @@ class GdeltSource {
   async fetchQuery(query, options = {}) {
     const url = this._buildUrl(query, options);
     try {
-      const response = await fetch(url, {
+      const response = await fetchWithRetry(url, {
         headers: { 'User-Agent': 'PA-CyberWatch-Feed/1.0' },
         timeout: 20000,
       });

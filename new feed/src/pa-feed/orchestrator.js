@@ -14,11 +14,17 @@ const { NewsSource } = require('./sources/news-source');
 const { GdeltSource } = require('./sources/gdelt-source');
 const { CisaSource } = require('./sources/cisa-source');
 const { SocialSource } = require('./sources/social-source');
+const { PAAttorneyGeneralSource } = require('./sources/pa-ag-source');
+const { FeedStorage } = require('./storage');
 
 class PAFeedOrchestrator {
   constructor(options = {}) {
+    // Storage (load persisted entities if available)
+    this.storage = new FeedStorage(options.storage);
+
     // Core components
-    this.entityManager = new EntityManager(options.entities);
+    const savedEntities = this.storage.loadEntities();
+    this.entityManager = new EntityManager(savedEntities || options.entities);
     this.deduplicator = new IncidentDeduplicator();
     this.summarizer = new IncidentSummarizer(options.summarizer);
     this.teamsAlerter = new TeamsAlerter(options.teams);
@@ -28,17 +34,19 @@ class PAFeedOrchestrator {
     this.gdeltSrc = new GdeltSource(options.gdelt);
     this.cisaSrc = new CisaSource(options.cisa);
     this.socialSrc = new SocialSource(options.social);
+    this.paAgSrc = new PAAttorneyGeneralSource(options.paAg);
 
     // Config
     this.enableSocial = options.enableSocial || false;
     this.enableAlerts = options.enableAlerts !== false;
 
-    // State
-    this.lastRunAt = null;
-    this.runCount = 0;
-    this.incidents = [];
+    // State - restore from disk if available
+    const savedState = this.storage.loadState();
+    this.lastRunAt = savedState?.lastRunAt || null;
+    this.runCount = savedState?.runCount || 0;
+    this.incidents = this.storage.loadIncidents() || [];
     this.rawItems = [];
-    this.stats = { total: 0, high: 0, medium: 0, low: 0, noise: 0 };
+    this.stats = savedState?.stats || { total: 0, high: 0, medium: 0, low: 0, noise: 0 };
 
     // Scheduler
     this._timers = [];
@@ -57,17 +65,18 @@ class PAFeedOrchestrator {
       const broadQueries = buildBroadSearchQueries();
 
       // Step 2: Ingest from all sources in parallel
-      const [newsItems, gdeltItems, cisaItems, socialItems] = await Promise.all([
+      const [newsItems, gdeltItems, cisaItems, paAgItems, socialItems] = await Promise.all([
         this.newsSrc.fetchAll([...entityQueries.slice(0, 10), ...broadQueries]),
         this.gdeltSrc.fetchAll(this.gdeltSrc.getDefaultQueries()),
         this.cisaSrc.fetchAll(),
+        this.paAgSrc.fetchAll(),
         this.enableSocial ? this.socialSrc.fetchAll() : Promise.resolve([]),
       ]);
 
-      console.log(`[PAFeed] Ingested: news=${newsItems.length}, gdelt=${gdeltItems.length}, cisa=${cisaItems.length}, social=${socialItems.length}`);
+      console.log(`[PAFeed] Ingested: news=${newsItems.length}, gdelt=${gdeltItems.length}, cisa=${cisaItems.length}, paAg=${paAgItems.length}, social=${socialItems.length}`);
 
       // Step 3: Combine and filter
-      const allRawItems = [...newsItems, ...gdeltItems, ...cisaItems, ...socialItems];
+      const allRawItems = [...newsItems, ...gdeltItems, ...cisaItems, ...paAgItems, ...socialItems];
       this.rawItems = allRawItems;
 
       // Step 4: Process each item through the pipeline
@@ -75,8 +84,9 @@ class PAFeedOrchestrator {
       for (const item of allRawItems) {
         const text = `${item.headline} ${item.description || ''}`;
 
-        // Check for incident keywords (skip items with no relevant keywords, except CISA)
-        if (item.rawSource !== 'CISA_Alerts' && item.rawSource !== 'CISA_KEV') {
+        // Check for incident keywords (skip items with no relevant keywords, except official sources)
+        const isOfficialSource = item.rawSource === 'CISA_Alerts' || item.rawSource === 'CISA_KEV' || item.rawSource === 'PA_AG';
+        if (!isOfficialSource) {
           if (!hasIncidentKeywords(text)) continue;
         }
 
@@ -85,8 +95,7 @@ class PAFeedOrchestrator {
         const geoMatches = this.entityManager.matchGeography(text);
 
         // Skip items with no PA relevance (no entity match and no geography match)
-        if (entityMatches.length === 0 && geoMatches.length === 0 &&
-            item.rawSource !== 'CISA_Alerts' && item.rawSource !== 'CISA_KEV') {
+        if (entityMatches.length === 0 && geoMatches.length === 0 && !isOfficialSource) {
           continue;
         }
 
@@ -173,6 +182,10 @@ class PAFeedOrchestrator {
       this.lastRunAt = cycleStart.toISOString();
       this.runCount++;
 
+      // Persist to disk
+      this.storage.saveIncidents(this.incidents);
+      this.storage.saveState({ lastRunAt: this.lastRunAt, runCount: this.runCount, stats: this.stats });
+
       console.log(`[PAFeed] Cycle complete. Stats:`, this.stats);
       return { incidents: this.incidents, stats: this.stats };
 
@@ -241,6 +254,7 @@ class PAFeedOrchestrator {
         news: { lastPoll: this.newsSrc.lastPollAt },
         gdelt: { lastPoll: this.gdeltSrc.lastPollAt },
         cisa: { lastPoll: this.cisaSrc.lastPollAt },
+        paAg: { lastPoll: this.paAgSrc.lastPollAt },
         social: { lastPoll: this.socialSrc.lastPollAt, enabled: this.enableSocial },
       },
       config: {
