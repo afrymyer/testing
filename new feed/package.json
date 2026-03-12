@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "PA Cyber Watch Feed - incident detection for PA organizations",
   "scripts": {
+    "postinstall": "node setup.js",
     "start": "node pa-feed-server.js"
   },
   "dependencies": {
