@@ -35,9 +35,6 @@
         <button id="btn-demo" class="btn btn-secondary">Load Demo Tickets</button>
         <button id="btn-ai" class="btn btn-ai hidden" title="Run Claude AI analysis on loaded tickets">AI Analyze</button>
         <button id="btn-scripts" class="btn btn-secondary">Browse All Scripts</button>
-        <button id="btn-bulk-scripts" class="btn btn-secondary hidden" title="Run scripts on selected quick hitter tickets">Bulk Scripts</button>
-        <button id="btn-export-csv" class="btn btn-secondary hidden" title="Export analytics to CSV">Export CSV</button>
-        <button id="btn-shortcuts" class="btn btn-ghost" title="Keyboard shortcuts (press ?)">?</button>
       </div>
 
       <div class="controls-row controls-filters">
@@ -148,7 +145,6 @@
     <section id="analytics-section" class="analytics-section hidden">
       <div class="tab-bar">
         <button class="tab-btn active" data-tab="tab-overview">Overview</button>
-        <button class="tab-btn" data-tab="tab-sla">SLA</button>
         <button class="tab-btn" data-tab="tab-clients">Clients</button>
         <button class="tab-btn" data-tab="tab-sde-metrics">SDE Metrics</button>
         <button class="tab-btn" data-tab="tab-ai-insights" id="tab-btn-ai-insights">AI &amp; Tickets</button>
@@ -232,40 +228,6 @@
           </div>
         </div>
 
-      </div>
-
-      <!-- Tab: SLA Compliance -->
-      <div id="tab-sla" class="tab-panel">
-        <div class="panel-card">
-          <div class="section-header">
-            <h3>SLA Compliance Overview</h3>
-            <button id="btn-export-sla" class="btn btn-secondary btn-sm">Export CSV</button>
-          </div>
-          <div id="sla-compliance-summary" class="sla-summary-grid"></div>
-        </div>
-
-        <div class="overview-grid">
-          <div class="panel-card">
-            <h3>SLA Compliance Rate</h3>
-            <div id="sla-compliance-donut" class="donut-chart-wrap"></div>
-          </div>
-          <div class="panel-card">
-            <h3>First Response Time</h3>
-            <div id="sla-frt-summary"></div>
-          </div>
-        </div>
-
-        <div class="panel-card">
-          <h3>MTTR by Category</h3>
-          <p class="panel-desc">Mean Time to Resolution — average hours from ticket creation to resolution</p>
-          <div id="sla-mttr-category-bars"></div>
-        </div>
-
-        <div class="panel-card">
-          <h3>MTTR by Priority</h3>
-          <p class="panel-desc">Mean Time to Resolution grouped by priority level</p>
-          <div id="sla-mttr-priority-bars"></div>
-        </div>
       </div>
 
       <!-- Tab: Clients -->
@@ -627,48 +589,6 @@
     </div>
   </main>
 
-    <!-- Keyboard Shortcuts Modal -->
-    <div id="shortcuts-modal" class="modal hidden">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h2>Keyboard Shortcuts</h2>
-          <button id="shortcuts-close" class="btn-close">&times;</button>
-        </div>
-        <div class="modal-body">
-          <div class="shortcuts-grid">
-            <div class="shortcut-item"><kbd>F</kbd> <span>Fetch Tickets</span></div>
-            <div class="shortcut-item"><kbd>D</kbd> <span>Load Demo</span></div>
-            <div class="shortcut-item"><kbd>A</kbd> <span>AI Analyze</span></div>
-            <div class="shortcut-item"><kbd>S</kbd> <span>Browse Scripts</span></div>
-            <div class="shortcut-item"><kbd>E</kbd> <span>Export CSV</span></div>
-            <div class="shortcut-item"><kbd>1</kbd>-<kbd>5</kbd> <span>Switch Tabs</span></div>
-            <div class="shortcut-item"><kbd>Esc</kbd> <span>Close Modal</span></div>
-            <div class="shortcut-item"><kbd>?</kbd> <span>Show Shortcuts</span></div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Bulk Script Execution Modal -->
-    <div id="bulk-modal" class="modal hidden">
-      <div class="modal-content modal-wide">
-        <div class="modal-header">
-          <h2>Bulk Script Execution</h2>
-          <button id="bulk-close" class="btn-close">&times;</button>
-        </div>
-        <div class="modal-body" id="bulk-modal-body">
-          <p class="panel-desc">Select quick hitter tickets and scripts to generate a bulk execution plan.</p>
-          <div id="bulk-ticket-list"></div>
-          <div id="bulk-script-list"></div>
-          <div id="bulk-results"></div>
-        </div>
-        <div class="modal-footer">
-          <button id="btn-bulk-generate" class="btn btn-primary">Generate Script Bundle</button>
-          <button id="btn-bulk-download" class="btn btn-secondary hidden">Download All Scripts</button>
-        </div>
-      </div>
-    </div>
-
   <footer class="app-footer">
     <span class="footer-brand">IntermixIT</span>
     <span class="footer-sep">&bull;</span>
@@ -677,12 +597,6 @@
     <span class="footer-ai">AI-Powered</span>
   </footer>
 
-  <script src="app.js?v=33"></script>
-  <script src="modules/export.js?v=33"></script>
-  <script src="modules/pagination.js?v=33"></script>
-  <script src="modules/keyboard.js?v=33"></script>
-  <script src="modules/sla.js?v=33"></script>
-  <script src="modules/bulk-scripts.js?v=33"></script>
-  <script src="modules/cross-reference.js?v=33"></script>
+  <script src="app.js?v=32"></script>
 </body>
 </html>
